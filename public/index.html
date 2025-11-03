@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hawaiian Rummy - Multiplayer</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=2">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2">
+    <script src="/socket.io/socket.io.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function HawaiianRummyMultiplayer() {
+          const [socket, setSocket] = useState(null);
+          const [gamePhase, setGamePhase] = useState('join'); // join, lobby, playing
+          const [playerName, setPlayerName] = useState('');
+          const [lobbyPlayers, setLobbyPlayers] = useState([]);
+          const [gameState, setGameState] = useState(null);
+          const [selectedCards, setSelectedCards] = useState([]);
+          const [message, setMessage] = useState('');
+          const [draggedCardId, setDraggedCardId] = useState(null);
+          const [layoffMode, setLayoffMode] = useState(false);
+          const [selectedMeld, setSelectedMeld] = useState(null);
+          const [wildcardReplaceMode, setWildcardReplaceMode] = useState(false);
+          const [selectedWildcard, setSelectedWildcard] = useState(null);
+          const [showHowToPlay, setShowHowToPlay] = useState(false);
+          const [wildcardPositionPrompt, setWildcardPositionPrompt] = useState(null);
+
+          const roundRequirements = [
+            { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
+            { sets: 1, setSizes: [3], runs: 1, runSizes: [4], description: "1 set of 3 and a run of 4" },
+            { sets: 0, setSizes: [], runs: 2, runSizes: [4, 4], description: "2 runs of 4" },
+            { sets: 3, setSizes: [3, 3, 3], runs: 0, runSizes: [], description: "3 sets of 3" },
+            { sets: 1, setSizes: [3], runs: 1, runSizes: [7], description: "1 set of 3 and a run of 7" },
+            { sets: 2, setSizes: [3, 3], runs: 1, runSizes: [5], description: "2 sets of 3 and a run of 5" },
+            { sets: 3, setSizes: [4, 4, 4], runs: 0, runSizes: [], description: "3 sets of 4" },
+            { sets: 1, setSizes: [3], runs: 1, runSizes: [10], description: "1 set of 3 and a run of 10" },
+            { sets: 3, setSizes: [3, 3, 3], runs: 1, runSizes: [5], description: "3 sets of 3 and a run of 5" },
+            { sets: 0, setSizes: [], runs: 3, runSizes: [5, 5, 5], description: "3 runs of 5" }
+          ];
+
+          useEffect(() => {
+            const newSocket = io();
+            setSocket(newSocket);
+
+            newSocket.on('lobbyUpdate', (data) => {
+              setLobbyPlayers(data.players);
+              if (data.gameStarted) {
+                setGamePhase('playing');
+              }
+            });
+
+            newSocket.on('gameState', (state) => {
+              setGameState(state);
+              setGamePhase('playing');
+              if (state.isMyTurn && state.gamePhase === 'draw') {
+                setMessage('Your turn! Draw a card or take from discard pile');
+              } else if (state.isMyTurn) {
+                setMessage('Your turn! Create melds, layoff, or discard');
+              } else {
+                const currentPlayer = state.players[state.currentPlayerIndex];
+                setMessage(`Waiting for ${currentPlayer.name}'s turn`);
+              }
+            });
+
+            newSocket.on('gameAlreadyStarted', () => {
+              setMessage('Game already in progress. Please wait for next game.');
+            });
+
+            newSocket.on('gameFull', () => {
+              setMessage('Game is full (4 players max)');
+            });
+
+            newSocket.on('error', (msg) => {
+              setMessage(msg);
+            });
+
+            newSocket.on('needWildcardPosition', (data) => {
+              setWildcardPositionPrompt(data);
+            });
+
+            return () => newSocket.close();
+          }, []);
+
+          const joinGame = () => {
+            if (playerName.trim()) {
+              socket.emit('joinGame', playerName);
+              setGamePhase('lobby');
+            }
+          };
+
+          const startGame = () => {
+            socket.emit('startGame');
+          };
+
+          const drawCard = () => {
+            socket.emit('drawCard');
+            setSelectedCards([]);
+          };
+
+          const takeDiscard = () => {
+            socket.emit('takeDiscard');
+            setSelectedCards([]);
+          };
+
+          const createMeld = (type) => {
+            if (selectedCards.length === 0) {
+              setMessage('Select cards first');
+              return;
+            }
+            socket.emit('createMeld', { type, cardIds: selectedCards });
+            setSelectedCards([]);
+          };
+
+          const cancelMelds = () => {
+            socket.emit('cancelMelds');
+            setSelectedCards([]);
+            setMessage('Melds cancelled. Cards returned to hand.');
+          };
+
+          const layoffCard = () => {
+            if (selectedCards.length !== 1) {
+              setMessage('Select exactly one card to layoff');
+              return;
+            }
+            setLayoffMode(true);
+            setMessage('Click on a meld to place the card');
+          };
+
+          const requestBuy = () => {
+            socket.emit('requestBuy');
+          };
+
+          const cancelBuy = () => {
+            socket.emit('cancelBuy');
+          };
+
+          const passBuy = () => {
+            socket.emit('passBuy');
+          };
+
+          const completeLayoff = (ownerId, meldIndex, wildcardPosition = null) => {
+            const meld = gameState.players.find(p => p.id === ownerId).melds[meldIndex];
+            const card = gameState.myHand.find(c => c.id === selectedCards[0]);
+
+            // Check if this is a run with wildcards that could be replaced
+            if (meld.type === 'run' && !card.isWild) {
+              const wildcards = meld.cards.filter(c => c.isWild);
+              if (wildcards.length > 0) {
+                // Ask user which wildcard to replace and where to move it
+                setWildcardReplaceMode(true);
+                setSelectedMeld({ ownerId, meldIndex, wildcards });
+                setMessage('Click a wildcard to replace, or click "Add to Run" to add card normally');
+                return;
+              }
+            }
+
+            // Normal layoff
+            socket.emit('layoffCard', {
+              cardId: selectedCards[0],
+              meldOwnerId: ownerId,
+              meldIndex: meldIndex,
+              wildcardPosition: wildcardPosition
+            });
+            setSelectedCards([]);
+            setLayoffMode(false);
+            setSelectedMeld(null);
+          };
+
+          const replaceWildcard = (wildcardId, newPosition) => {
+            socket.emit('layoffCard', {
+              cardId: selectedCards[0],
+              meldOwnerId: selectedMeld.ownerId,
+              meldIndex: selectedMeld.meldIndex,
+              wildcardToReplace: wildcardId,
+              wildcardNewPosition: newPosition
+            });
+            setSelectedCards([]);
+            setLayoffMode(false);
+            setSelectedMeld(null);
+            setWildcardReplaceMode(false);
+            setSelectedWildcard(null);
+          };
+
+          const addToRunNormally = () => {
+            socket.emit('layoffCard', {
+              cardId: selectedCards[0],
+              meldOwnerId: selectedMeld.ownerId,
+              meldIndex: selectedMeld.meldIndex
+            });
+            setSelectedCards([]);
+            setLayoffMode(false);
+            setSelectedMeld(null);
+            setWildcardReplaceMode(false);
+            setSelectedWildcard(null);
+          };
+
+          const discard = () => {
+            if (selectedCards.length !== 1) {
+              setMessage('Select exactly one card to discard');
+              return;
+            }
+            socket.emit('discard', selectedCards[0]);
+            setSelectedCards([]);
+          };
+
+          const toggleCardSelection = (cardId) => {
+            if (gameState && !gameState.isMyTurn) return;
+            if (gameState && gameState.gamePhase === 'draw') return;
+            
+            setSelectedCards(prev => 
+              prev.includes(cardId) 
+                ? prev.filter(id => id !== cardId)
+                : [...prev, cardId]
+            );
+          };
+
+          const handleDragStart = (cardId) => {
+            setDraggedCardId(cardId);
+          };
+
+          const handleDragOver = (e) => {
+            e.preventDefault();
+          };
+
+          const handleDrop = (targetCardId) => {
+            if (!draggedCardId || draggedCardId === targetCardId) {
+              setDraggedCardId(null);
+              return;
+            }
+
+            const hand = gameState.myHand;
+            const draggedIndex = hand.findIndex(c => c.id === draggedCardId);
+            const targetIndex = hand.findIndex(c => c.id === targetCardId);
+
+            const newHand = [...hand];
+            const [draggedCard] = newHand.splice(draggedIndex, 1);
+            newHand.splice(targetIndex, 0, draggedCard);
+
+            socket.emit('reorderHand', newHand.map(c => c.id));
+            setDraggedCardId(null);
+          };
+
+          const getCardColor = (suit) => {
+            return (suit === '♥' || suit === '♦') ? 'text-red-600' : 'text-black';
+          };
+
+          const canCardFitMeld = (card, meld) => {
+            // Simplified check - server will validate
+            return true;
+          };
+
+          // Wildcard Position Prompt Modal
+          const WildcardPositionModal = () => {
+            if (!wildcardPositionPrompt) return null;
+
+            const handlePositionChoice = (position) => {
+              completeLayoff(
+                wildcardPositionPrompt.meldOwnerId,
+                wildcardPositionPrompt.meldIndex,
+                position
+              );
+              setWildcardPositionPrompt(null);
+            };
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
+                  <h2 className="text-2xl font-bold mb-4">Choose Wildcard Position</h2>
+                  <p className="mb-4">Your wildcard can be placed at either end of this run. Where would you like to place it?</p>
+
+                  <div className="space-y-3">
+                    {wildcardPositionPrompt.validPositions.includes('beginning') && (
+                      <button
+                        onClick={() => handlePositionChoice('beginning')}
+                        className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                      >
+                        Place at Beginning (Extend Down)
+                      </button>
+                    )}
+                    {wildcardPositionPrompt.validPositions.includes('end') && (
+                      <button
+                        onClick={() => handlePositionChoice('end')}
+                        className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700"
+                      >
+                        Place at End (Extend Up)
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setWildcardPositionPrompt(null)}
+                      className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          // How to Play Modal Component
+          const HowToPlayModal = () => {
+            if (!showHowToPlay) return null;
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowHowToPlay(false)}>
+                <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                  <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+                    <h2 className="text-2xl font-bold">Hawaiian Rummy - How to Play</h2>
+                    <button
+                      onClick={() => setShowHowToPlay(false)}
+                      className="text-gray-500 hover:text-gray-700 text-3xl leading-none"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="p-6 space-y-6">
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Game Overview</h3>
+                      <p>Hawaiian Rummy is a multi-round card game for 2-4 players. The objective is to have the <strong>lowest score</strong> after 10 rounds. Players create melds (sets and runs) according to specific requirements for each round, then try to get rid of all their cards.</p>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">The Deck</h3>
+                      <p>The game uses <strong>3 standard decks plus 6 jokers</strong> (162 cards total)</p>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Card Values & Wildcards</h3>
+                      <div className="bg-gray-50 p-4 rounded">
+                        <p className="font-semibold mb-2">Scoring Points (when left in hand):</p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li><strong>Jokers:</strong> 50 points each</li>
+                          <li><strong>2s:</strong> 20 points each</li>
+                          <li><strong>Aces:</strong> 15 points each</li>
+                          <li><strong>10, J, Q, K:</strong> 10 points each</li>
+                          <li><strong>3-9:</strong> 5 points each</li>
+                        </ul>
+                        <p className="mt-3 text-purple-700 font-semibold">🃏 2s and Jokers are wildcards and can substitute for any card in melds.</p>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Round Requirements</h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse border border-gray-300 text-sm">
+                          <thead className="bg-gray-100">
+                            <tr>
+                              <th className="border border-gray-300 p-2">Round</th>
+                              <th className="border border-gray-300 p-2">Requirement</th>
+                              <th className="border border-gray-300 p-2">Max Buys</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr><td className="border border-gray-300 p-2 text-center">1</td><td className="border border-gray-300 p-2">2 sets of 3</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">2</td><td className="border border-gray-300 p-2">1 set of 3 and a run of 4</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">3</td><td className="border border-gray-300 p-2">2 runs of 4</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">4</td><td className="border border-gray-300 p-2">3 sets of 3</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">5</td><td className="border border-gray-300 p-2">1 set of 3 and a run of 7</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">6</td><td className="border border-gray-300 p-2">2 sets of 3 and a run of 5</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">7</td><td className="border border-gray-300 p-2">3 sets of 4</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">8</td><td className="border border-gray-300 p-2">1 set of 3 and a run of 10</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">9</td><td className="border border-gray-300 p-2">3 sets of 3 and a run of 5</td><td className="border border-gray-300 p-2 text-center">3</td></tr>
+                            <tr><td className="border border-gray-300 p-2 text-center">10</td><td className="border border-gray-300 p-2">3 runs of 5</td><td className="border border-gray-300 p-2 text-center">4</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Turn Structure</h3>
+                      <div className="space-y-3">
+                        <div className="bg-blue-50 p-3 rounded">
+                          <p className="font-semibold">1. DRAW PHASE</p>
+                          <p>Choose ONE: Draw from deck OR take discard pile (if available and no buy was just processed)</p>
+                        </div>
+                        <div className="bg-purple-50 p-3 rounded">
+                          <p className="font-semibold">2. MELD/LAYOFF PHASE (Optional)</p>
+                          <p>Create melds, cancel melds, or layoff cards (only after meeting requirements)</p>
+                        </div>
+                        <div className="bg-red-50 p-3 rounded">
+                          <p className="font-semibold">3. DISCARD PHASE</p>
+                          <p>Discard one card to end your turn. If you discard your last card and met requirements, you win the round!</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Melds Explained</h3>
+                      <div className="space-y-2">
+                        <div>
+                          <p className="font-semibold">Sets:</p>
+                          <p>3 or more cards of the <strong>same rank</strong> (different suits allowed)</p>
+                          <p className="text-sm text-gray-600">Example: 7♠ 7♥ 7♦ or K♣ K♦ 2♠ (wildcard)</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold">Runs:</p>
+                          <p>4 or more consecutive cards of the <strong>same suit</strong></p>
+                          <p className="text-sm text-gray-600">Example: 5♥ 6♥ 7♥ 8♥ or 3♦ 2♣ 5♦ 6♦ (wildcard fills 4♦)</p>
+                          <p className="text-sm text-gray-600">Aces can be low (A-2-3-4) or high (J-Q-K-A), but not wrap (K-A-2 invalid)</p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">The Buy Mechanism</h3>
+                      <p>When it's <strong>not your turn</strong>, you can "buy" the discard pile card:</p>
+                      <ol className="list-decimal list-inside space-y-1 mt-2">
+                        <li>Click "Request Buy" when you want the discard card</li>
+                        <li>All players between the current player and you must "Pass" to grant you the buy</li>
+                        <li>If granted, you receive the discard card + one penalty card from deck</li>
+                      </ol>
+                      <div className="bg-yellow-50 p-3 rounded mt-2">
+                        <p className="font-semibold">Buy Rules:</p>
+                        <ul className="list-disc list-inside text-sm space-y-1">
+                          <li>Maximum buys per round (usually 3, see table above)</li>
+                          <li>Cannot buy your own discarded card</li>
+                          <li>Player closest to current player has priority</li>
+                          <li>After a buy, current player must draw from deck</li>
+                        </ul>
+                      </div>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Laying Off Cards</h3>
+                      <p>After meeting your round requirements, you can add individual cards to <strong>any player's melds</strong>:</p>
+                      <ul className="list-disc list-inside mt-2 space-y-1">
+                        <li><strong>On Sets:</strong> Add cards of the same rank</li>
+                        <li><strong>On Runs:</strong> Add cards that extend the run</li>
+                        <li><strong>Wildcard Replacement:</strong> Replace a wildcard with the actual card, then move the wildcard to extend the run</li>
+                      </ul>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Winning</h3>
+                      <p>A round ends when a player discards or lays off their last card (after meeting requirements).</p>
+                      <p className="mt-2">After 10 rounds, the player with the <strong>lowest total score wins!</strong></p>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Strategy Tips</h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li>Wildcards are powerful - use them wisely</li>
+                        <li>Watch the discard pile to track what others need</li>
+                        <li>Buying is costly - each buy adds a penalty card</li>
+                        <li>Complete requirements early to enable laying off</li>
+                        <li>Don't hold high-value cards (Aces, 2s, face cards)</li>
+                      </ul>
+                    </section>
+
+                    <section>
+                      <h3 className="text-xl font-bold mb-2">Interface Tips</h3>
+                      <ul className="list-disc list-inside space-y-1">
+                        <li><strong>Click cards</strong> to select them for melding or discarding</li>
+                        <li><strong>Drag and drop</strong> to reorder your hand</li>
+                        <li>Selected cards are highlighted and raised up</li>
+                        <li>Use "Cancel Melding" to return cards to your hand</li>
+                      </ul>
+                    </section>
+                  </div>
+
+                  <div className="sticky bottom-0 bg-white border-t p-4">
+                    <button
+                      onClick={() => setShowHowToPlay(false)}
+                      className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                    >
+                      Got it! Let's Play
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          // Join screen
+          if (gamePhase === 'join') {
+            return (
+              <>
+                <HowToPlayModal />
+                <div className="min-h-screen bg-green-800 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+                    <div className="flex justify-center mb-6">
+                      <img src="/hawaiian-rummy-logo.png" alt="Hawaiian Rummy Logo" className="max-w-full h-auto" style={{maxHeight: '150px'}} />
+                    </div>
+                    <h1 className="text-3xl font-bold mb-6 text-center">Hawaiian Rummy</h1>
+                    <input
+                      type="text"
+                      placeholder="Enter your name"
+                      value={playerName}
+                      onChange={(e) => setPlayerName(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && joinGame()}
+                      className="w-full p-3 border-2 border-gray-300 rounded mb-4"
+                    />
+                    <button
+                      onClick={joinGame}
+                      className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 mb-3"
+                    >
+                      Join Game
+                    </button>
+                    <button
+                      onClick={() => setShowHowToPlay(true)}
+                      className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700"
+                    >
+                      📖 How to Play
+                    </button>
+                    {message && (
+                      <div className="mt-4 p-3 bg-yellow-50 rounded text-center">
+                        {message}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            );
+          }
+
+          // Lobby screen
+          if (gamePhase === 'lobby') {
+            return (
+              <>
+                <HowToPlayModal />
+                <div className="min-h-screen bg-green-800 flex items-center justify-center p-4">
+                  <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
+                    <div className="flex justify-center mb-6">
+                      <img src="/hawaiian-rummy-logo.png" alt="Hawaiian Rummy Logo" className="max-w-full h-auto" style={{maxHeight: '150px'}} />
+                    </div>
+                    <h1 className="text-3xl font-bold mb-6 text-center">Game Lobby</h1>
+                    <div className="mb-6">
+                      <h2 className="text-xl font-bold mb-3">Players ({lobbyPlayers.length}/4):</h2>
+                      <ul className="space-y-2">
+                        {lobbyPlayers.map(player => (
+                          <li key={player.id} className="p-2 bg-gray-100 rounded">
+                            {player.name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <button
+                      onClick={startGame}
+                      disabled={lobbyPlayers.length < 2}
+                      className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed mb-3"
+                    >
+                      Start Game
+                    </button>
+                    <button
+                      onClick={() => setShowHowToPlay(true)}
+                      className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                    >
+                      📖 How to Play
+                    </button>
+                    <p className="mt-4 text-sm text-gray-600 text-center">
+                      {lobbyPlayers.length < 2 ? 'Need at least 2 players to start' : 'Ready to start!'}
+                    </p>
+                  </div>
+                </div>
+              </>
+            );
+          }
+
+          // Playing screen
+          if (!gameState) return <div>Loading...</div>;
+
+          // Round Summary screen
+          if (gameState.gamePhase === 'roundSummary') {
+            const sortedPlayers = [...gameState.players].sort((a, b) => a.score - b.score);
+
+            return (
+              <div className="min-h-screen bg-green-800 flex items-center justify-center p-4">
+                <div className="bg-white rounded-lg shadow-lg p-8 max-w-5xl w-full">
+                  <h1 className="text-4xl font-bold mb-6 text-center">Round {gameState.currentRound + 1} Complete!</h1>
+
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-bold mb-4">Current Rankings:</h2>
+                    <div className="space-y-2">
+                      {sortedPlayers.map((player, idx) => (
+                        <div
+                          key={player.id}
+                          className={`p-4 rounded ${
+                            idx === 0
+                              ? 'bg-yellow-100 border-2 border-yellow-500'
+                              : 'bg-gray-100'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <span className="font-bold text-lg">
+                                {idx + 1}. {player.name}
+                                {idx === 0 && ' 🏆'}
+                              </span>
+                            </div>
+                            <div className="text-xl font-bold">{player.score} points</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mb-6 overflow-x-auto">
+                    <h2 className="text-2xl font-bold mb-4">Scores by Round:</h2>
+                    <table className="w-full border-collapse border border-gray-300">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="border border-gray-300 p-2 text-left">Player</th>
+                          {Array.from({length: gameState.currentRound + 1}, (_, i) => (
+                            <th key={i} className="border border-gray-300 p-2 text-center">R{i + 1}</th>
+                          ))}
+                          <th className="border border-gray-300 p-2 text-center font-bold">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sortedPlayers.map(player => (
+                          <tr key={player.id}>
+                            <td className="border border-gray-300 p-2 font-semibold">{player.name}</td>
+                            {player.roundScores.map((score, idx) => (
+                              <td key={idx} className="border border-gray-300 p-2 text-center">
+                                {score}
+                              </td>
+                            ))}
+                            <td className="border border-gray-300 p-2 text-center font-bold bg-gray-50">
+                              {player.score}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mb-4">
+                    {gameState.hasContinued ? (
+                      <div className="p-4 bg-green-100 rounded text-center">
+                        <p className="font-semibold text-green-800">
+                          ✓ You're ready! Waiting for other players...
+                        </p>
+                        <p className="text-sm mt-2 text-gray-600">
+                          {gameState.continueClicked.length} of {gameState.players.length} players ready
+                        </p>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => socket.emit('continueToNextRound')}
+                        className="w-full bg-blue-600 text-white px-6 py-3 rounded text-lg hover:bg-blue-700"
+                      >
+                        Continue to Round {gameState.currentRound + 2}
+                      </button>
+                    )}
+                  </div>
+
+                  {gameState.continueClicked.length > 0 && !gameState.hasContinued && (
+                    <p className="text-center text-sm text-gray-600">
+                      {gameState.continueClicked.length} of {gameState.players.length} players ready
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // Game over screen
+          if (gameState.gamePhase === 'gameOver') {
+            const winner = gameState.players.find(p => p.id === gameState.winner);
+            return (
+              <div className="min-h-screen bg-green-800 flex items-center justify-center p-4">
+                <div className="bg-white rounded-lg shadow-lg p-8 max-w-2xl w-full">
+                  <h1 className="text-4xl font-bold mb-6 text-center">Game Over!</h1>
+                  
+                  {gameState.isWinner && (
+                    <div className="text-3xl text-center mb-6 text-green-600 font-bold">
+                      🎉 You Won! 🎉
+                    </div>
+                  )}
+                  
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-bold mb-4">Final Scores:</h2>
+                    <div className="space-y-2">
+                      {gameState.players
+                        .sort((a, b) => a.score - b.score)
+                        .map((player, idx) => (
+                          <div 
+                            key={player.id} 
+                            className={`p-4 rounded ${
+                              player.id === gameState.winner 
+                                ? 'bg-green-100 border-2 border-green-500' 
+                                : 'bg-gray-100'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="font-bold text-lg">
+                                  {idx + 1}. {player.name}
+                                  {player.id === gameState.winner && ' 👑'}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xl font-bold">{player.score} points</div>
+                                <div className="text-sm text-gray-600">{player.roundsWon} rounds won</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => socket.emit('newGame')}
+                    className="w-full bg-blue-600 text-white px-6 py-3 rounded text-lg hover:bg-blue-700"
+                  >
+                    Play Again
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <>
+              <WildcardPositionModal />
+              <div className="min-h-screen bg-green-800 p-4">
+                <div className="max-w-7xl mx-auto">
+                  {/* Game header */}
+                  <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h1 className="text-2xl font-bold">Hawaiian Rummy - Round {gameState.currentRound + 1}/10</h1>
+                    <div className={`px-4 py-2 rounded ${gameState.isMyTurn ? 'bg-green-500 text-white' : 'bg-gray-300'}`}>
+                      {gameState.isMyTurn ? 'YOUR TURN' : 'Waiting...'}
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 p-3 bg-blue-50 rounded">
+                    <strong>Round {gameState.currentRound + 1} Goal:</strong> {roundRequirements[gameState.currentRound].description}
+                  </div>
+                  
+                  <div className="mt-4 p-3 bg-yellow-50 rounded">
+                    <strong>Status:</strong> {message}
+                  </div>
+                </div>
+
+                {/* Players info */}
+                <div className="grid grid-cols-4 gap-4 mb-4">
+                  {gameState.players.map((player, idx) => (
+                    <div key={player.id} className={`bg-white rounded-lg p-4 ${idx === gameState.currentPlayerIndex ? 'ring-4 ring-blue-500' : ''}`}>
+                      <h3 className="font-bold">{player.name}</h3>
+                      <p className="text-sm">Cards: {player.handSize}</p>
+                      <p className="text-sm">Score: {player.score}</p>
+                      <p className="text-sm">Rounds Won: {player.roundsWon || 0}</p>
+                      <p className="text-sm">Buys: {player.buyCount || 0}/{gameState.maxBuys}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Discard pile and deck */}
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
+                  <h2 className="text-xl font-bold mb-3">Discard Pile</h2>
+                  <div className="flex gap-2 min-h-[120px] items-center flex-wrap">
+                    {gameState.discardPile.length > 0 ? (
+                      <div
+                        onClick={takeDiscard}
+                        className={`bg-white border-2 border-gray-800 rounded p-3 w-20 text-center cursor-pointer hover:bg-gray-100 ${
+                          gameState.canTakeDiscard ? 'ring-2 ring-blue-500' : 'opacity-50 cursor-not-allowed'
+                        }`}
+                      >
+                        <div className={`text-2xl font-bold ${getCardColor(gameState.discardPile[gameState.discardPile.length - 1].suit)}`}>
+                          {gameState.discardPile[gameState.discardPile.length - 1].rank}
+                        </div>
+                        <div className={`text-xl ${getCardColor(gameState.discardPile[gameState.discardPile.length - 1].suit)}`}>
+                          {gameState.discardPile[gameState.discardPile.length - 1].suit}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-gray-400">Empty</div>
+                    )}
+                    <div
+                      onClick={drawCard}
+                      className={`bg-blue-900 text-white rounded p-3 w-20 text-center cursor-pointer hover:bg-blue-800 flex flex-col items-center justify-center ${
+                        gameState.canDraw ? 'ring-2 ring-blue-500' : 'opacity-50 cursor-not-allowed'
+                      }`}
+                    >
+                      <svg className="mb-1" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="4" y="4" width="16" height="16" rx="2" />
+                      </svg>
+                      <div className="text-xs">Draw ({gameState.deckSize})</div>
+                    </div>
+                    
+                    {/* Buy controls */}
+                    {gameState.gamePhase === 'draw' && gameState.discardPile.length > 0 && (
+                      <div className="ml-4 flex gap-2 items-center flex-wrap">
+                        {!gameState.isMyTurn && gameState.canBuy && !gameState.hasBuyRequest && (
+                          <button
+                            onClick={requestBuy}
+                            className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700"
+                          >
+                            Request Buy ({gameState.myBuyCount}/{gameState.maxBuys})
+                          </button>
+                        )}
+                        {gameState.hasBuyRequest && (
+                          <button
+                            onClick={cancelBuy}
+                            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700"
+                          >
+                            Cancel Buy Request
+                          </button>
+                        )}
+                        {gameState.shouldShowPass && !gameState.hasPassed && (
+                          <button
+                            onClick={passBuy}
+                            className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700"
+                          >
+                            {gameState.isMyTurn ? 'Pass (Grant Buy to Others)' : 'Pass (Let Others Buy)'}
+                          </button>
+                        )}
+                        {gameState.hasPassed && (
+                          <div className="text-sm bg-green-100 px-3 py-2 rounded">
+                            You passed
+                          </div>
+                        )}
+                        {gameState.buyRequests && gameState.buyRequests.length > 0 && (
+                          <div className="text-sm bg-yellow-100 px-3 py-2 rounded">
+                            {gameState.buyRequests.length} player(s) want to buy - All must pass to grant
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* My hand */}
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
+                  <h2 className="text-xl font-bold mb-3">Your Hand ({gameState.myHand.length} cards) - Drag to reorder</h2>
+                  <div className="flex flex-wrap gap-2 min-h-[120px]">
+                    {gameState.myHand.map(card => (
+                      <div
+                        key={card.id}
+                        draggable
+                        onDragStart={() => handleDragStart(card.id)}
+                        onDragOver={handleDragOver}
+                        onDrop={() => handleDrop(card.id)}
+                        onClick={() => toggleCardSelection(card.id)}
+                        className={`bg-white border-2 rounded p-3 w-20 text-center cursor-move transition-all ${
+                          selectedCards.includes(card.id)
+                            ? 'border-blue-500 bg-blue-50 transform -translate-y-2'
+                            : 'border-gray-800 hover:bg-gray-50'
+                        } ${draggedCardId === card.id ? 'opacity-50' : ''}`}
+                      >
+                        <div className={`text-2xl font-bold ${getCardColor(card.suit)}`}>
+                          {card.rank}
+                        </div>
+                        <div className={`text-xl ${getCardColor(card.suit)}`}>
+                          {card.suit}
+                        </div>
+                        {card.isWild && (
+                          <div className="text-xs text-purple-600 font-bold">WILD</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-4 flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => createMeld('set')}
+                      disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                      className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Create Set
+                    </button>
+                    <button
+                      onClick={() => createMeld('run')}
+                      disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                      className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Create Run
+                    </button>
+                    <button
+                      onClick={layoffCard}
+                      disabled={!gameState.isMyTurn || !gameState.hasMetRequirements}
+                      className="bg-orange-600 text-white px-4 py-2 rounded hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Layoff Card
+                    </button>
+                    <button
+                      onClick={cancelMelds}
+                      disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw' || !gameState.myMelds || gameState.myMelds.length === 0}
+                      className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Cancel Melding
+                    </button>
+                    <button
+                      onClick={discard}
+                      disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                      className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Discard Selected
+                    </button>
+                  </div>
+                </div>
+
+                {/* All players' melds */}
+                {gameState.players.map(player => (
+                  <div key={player.id} className="bg-white rounded-lg shadow-lg p-6 mb-4">
+                    <h2 className="text-xl font-bold mb-3">{player.name}'s Melds</h2>
+                    {player.melds.length === 0 ? (
+                      <div className="text-gray-400">No melds yet</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {player.melds.map((meld, idx) => {
+                          const isCompatible = layoffMode && selectedCards.length === 1;
+                          
+                          return (
+                            <div 
+                              key={idx}
+                              onClick={() => {
+                                if (layoffMode && isCompatible) {
+                                  completeLayoff(player.id, idx);
+                                }
+                              }}
+                              className={`border-2 rounded p-3 transition-all ${
+                                layoffMode && isCompatible
+                                  ? 'border-green-500 bg-green-50 cursor-pointer hover:bg-green-100' 
+                                  : 'border-gray-300'
+                              }`}
+                            >
+                              <div className="font-bold mb-2 capitalize">
+                                {meld.type} {layoffMode && isCompatible && '(Click to place card here)'}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {meld.cards.map(card => (
+                                  <div
+                                    key={card.id}
+                                    onClick={() => {
+                                      if (wildcardReplaceMode && card.isWild) {
+                                        setSelectedWildcard(card.id);
+                                      }
+                                    }}
+                                    className={`bg-white border-2 rounded p-2 w-16 text-center ${
+                                      wildcardReplaceMode && card.isWild
+                                        ? selectedWildcard === card.id
+                                          ? 'border-blue-500 bg-blue-100 cursor-pointer'
+                                          : 'border-purple-500 bg-purple-50 cursor-pointer hover:bg-purple-100'
+                                        : 'border-gray-800'
+                                    }`}
+                                  >
+                                    <div className={`text-xl font-bold ${getCardColor(card.suit)}`}>
+                                      {card.rank}
+                                    </div>
+                                    <div className={`text-lg ${getCardColor(card.suit)}`}>
+                                      {card.suit}
+                                    </div>
+                                    {card.isWild && (
+                                      <div className="text-xs text-purple-600 font-bold">WILD</div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                              
+                              {/* Wildcard replacement controls */}
+                              {wildcardReplaceMode && selectedMeld && 
+                               selectedMeld.ownerId === player.id && 
+                               selectedMeld.meldIndex === idx && (
+                                <div className="mt-3 flex gap-2 flex-wrap">
+                                  <div className="text-sm font-bold w-full mb-1">
+                                    Click a wildcard above, then choose where to move it:
+                                  </div>
+                                  <button
+                                    onClick={() => replaceWildcard(selectedWildcard, 'beginning')}
+                                    disabled={!selectedWildcard}
+                                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:bg-gray-300"
+                                  >
+                                    Move to Beginning
+                                  </button>
+                                  <button
+                                    onClick={() => replaceWildcard(selectedWildcard, 'end')}
+                                    disabled={!selectedWildcard}
+                                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:bg-gray-300"
+                                  >
+                                    Move to End
+                                  </button>
+                                  <button
+                                    onClick={addToRunNormally}
+                                    className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                                  >
+                                    Add Card Normally (No Replace)
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                </div>
+              </div>
+            </>
+          );
+        }
+
+        ReactDOM.render(<HawaiianRummyMultiplayer />, document.getElementById('root'));
+    </script>
+</body>
+</html>
