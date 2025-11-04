@@ -266,11 +266,18 @@
             if (!wildcardPositionPrompt) return null;
 
             const handlePositionChoice = (position) => {
-              completeLayoff(
-                wildcardPositionPrompt.meldOwnerId,
-                wildcardPositionPrompt.meldIndex,
-                position
-              );
+              // Send layoff request directly with the wildcard position
+              socket.emit('layoffCard', {
+                cardId: wildcardPositionPrompt.cardId,
+                meldOwnerId: wildcardPositionPrompt.meldOwnerId,
+                meldIndex: wildcardPositionPrompt.meldIndex,
+                wildcardPosition: position
+              });
+
+              // Clear states
+              setSelectedCards([]);
+              setLayoffMode(false);
+              setSelectedMeld(null);
               setWildcardPositionPrompt(null);
             };
 
@@ -298,7 +305,10 @@
                       </button>
                     )}
                     <button
-                      onClick={() => setWildcardPositionPrompt(null)}
+                      onClick={() => {
+                        setWildcardPositionPrompt(null);
+                        setLayoffMode(false);
+                      }}
                       className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
                     >
                       Cancel

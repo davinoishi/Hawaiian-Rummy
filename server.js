@@ -189,8 +189,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Can't buy your own discarded card
-    if (gameState.lastDiscarder === socket.id) {
+    // Can't buy your own discarded card (null means initial card, which anyone can buy)
+    if (gameState.lastDiscarder !== null && gameState.lastDiscarder === socket.id) {
       socket.emit('error', 'Cannot buy your own discarded card');
       return;
     }
@@ -727,12 +727,14 @@ function broadcastGameState() {
       // Player can buy if:
       // 1. Not their turn
       // 2. Haven't exceeded max buys
-      // 3. Didn't discard the card
-      // 4. No one with higher priority (closer to current) has requested
-      const canBuy = !isPlayerTurn(playerId) && 
-                     gameState.gamePhase === 'draw' && 
+      // 3. Didn't discard the card (if someone has discarded)
+      // 4. There's actually a card in the discard pile
+      // 5. No one with higher priority (closer to current) has requested
+      const canBuy = !isPlayerTurn(playerId) &&
+                     gameState.gamePhase === 'draw' &&
                      gameState.buyCount[playerId] < maxBuys &&
-                     gameState.lastDiscarder !== playerId &&
+                     (gameState.lastDiscarder === null || gameState.lastDiscarder !== playerId) &&
+                     gameState.discardPile.length > 0 &&
                      distance > 0;
       
       // Player should see pass button if:
