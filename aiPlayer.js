@@ -296,34 +296,48 @@ class AIPlayer {
 
   // ===== LAYOFF LOGIC =====
   async handleLayoffPhase(state) {
-    const hand = state.myHand || [];
-    const allPlayers = state.players || [];
+    // Keep laying off cards until no more can be laid off
+    let madeLayoff = true;
 
-    // Try to layoff highest point cards first
-    const sortedHand = [...hand].sort((a, b) => this.getCardPoints(b) - this.getCardPoints(a));
+    while (madeLayoff) {
+      madeLayoff = false;
 
-    for (const card of sortedHand) {
-      // Try each player's melds
-      for (const player of allPlayers) {
-        const melds = player.melds || [];
+      // Get fresh state each iteration
+      const currentState = this.gameState || state;
+      const hand = currentState.myHand || [];
+      const allPlayers = currentState.players || [];
 
-        for (let meldIndex = 0; meldIndex < melds.length; meldIndex++) {
-          const meld = melds[meldIndex];
+      if (hand.length === 0) break;
 
-          if (this.canLayoffCard(card, meld)) {
-            console.log(`${this.playerName} lays off ${card.rank}${card.suit} to ${player.name}'s meld`);
+      // Try to layoff highest point cards first
+      const sortedHand = [...hand].sort((a, b) => this.getCardPoints(b) - this.getCardPoints(a));
 
-            // Simple layoff without wildcard replacement for now
-            this.socket.emit('layoffCard', {
-              cardId: card.id,
-              meldOwnerId: player.id,
-              meldIndex: meldIndex
-            });
+      for (const card of sortedHand) {
+        // Try each player's melds
+        for (const player of allPlayers) {
+          const melds = player.melds || [];
 
-            await this.sleepAsync(300);
-            return; // Layoff one card at a time
+          for (let meldIndex = 0; meldIndex < melds.length; meldIndex++) {
+            const meld = melds[meldIndex];
+
+            if (this.canLayoffCard(card, meld)) {
+              console.log(`${this.playerName} lays off ${card.rank}${card.suit} to ${player.name}'s meld`);
+
+              // Simple layoff without wildcard replacement for now
+              this.socket.emit('layoffCard', {
+                cardId: card.id,
+                meldOwnerId: player.id,
+                meldIndex: meldIndex
+              });
+
+              await this.sleepAsync(500); // Wait for server to process and update state
+              madeLayoff = true;
+              break; // Break inner loops, restart with fresh hand
+            }
           }
+          if (madeLayoff) break;
         }
+        if (madeLayoff) break;
       }
     }
   }
@@ -347,7 +361,26 @@ class AIPlayer {
     const hand = state.myHand || [];
     const requirements = this.getRoundRequirements(state.currentRound);
 
-    // Wildcards are always useful
+    // IMPORTANT: If we're buying and have already met requirements,
+    // only buy if the card can be laid off immediately
+    if (forBuying && state.hasMetRequirements) {
+      // Check if this card can be laid off on ANY existing meld
+      const allPlayers = state.players || [];
+      for (const player of allPlayers) {
+        const melds = player.melds || [];
+        for (const meld of melds) {
+          if (this.canLayoffCard(card, meld)) {
+            console.log(`${this.playerName} considers buying ${card.rank}${card.suit} - can layoff on existing meld`);
+            return true;
+          }
+        }
+      }
+      // Can't layoff, so don't buy after melding
+      console.log(`${this.playerName} skips buying ${card.rank}${card.suit} - already melded and can't layoff`);
+      return false;
+    }
+
+    // Wildcards are always useful (if we haven't met requirements yet)
     if (card.isWild) {
       return true;
     }

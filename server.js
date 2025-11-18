@@ -28,7 +28,8 @@ let gameState = {
   playerMelds: {},
   playerScores: {},
   roundScores: {}, // Track score per round per player: {playerId: [round1Score, round2Score, ...]}
-  gamePhase: 'lobby', // lobby, draw, meld, discard, roundSummary
+  gamePhase: 'lobby', // lobby, turnOrder, draw, meld, discard, roundSummary
+  turnOrderDraws: [], // Array of {playerId, card, value} for turn order determination
   hasMetRequirements: {},
   buyRequests: [], // Array of {playerId, timestamp}
   maxBuysPerRound: {},
@@ -145,6 +146,94 @@ function startNewRound() {
   gameState.gamePhase = 'draw';
 }
 
+// Determine starting player order by random selection
+async function determineTurnOrder() {
+  console.log('Starting turn order determination... Connected clients:', io.sockets.sockets.size);
+  gameState.gamePhase = 'turnOrder';
+
+  // Start with all players in a pool
+  const remainingPlayers = [...gameState.players];
+  const selectedOrder = [];
+
+  // Send initial state - all positions empty
+  io.emit('turnOrderUpdate', {
+    phase: 'selecting',
+    position: 0,
+    selectedOrder: [],
+    remainingPlayers: remainingPlayers.map(id => ({
+      playerId: id,
+      name: io.sockets.sockets.get(id)?.playerName || 'Unknown'
+    }))
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 1500));
+
+  // Select players one by one for positions 1-4
+  for (let position = 1; position <= 4; position++) {
+    // Randomly select from remaining players
+    const randomIndex = Math.floor(Math.random() * remainingPlayers.length);
+    const selectedPlayerId = remainingPlayers[randomIndex];
+    const selectedName = io.sockets.sockets.get(selectedPlayerId)?.playerName || 'Unknown';
+
+    // Remove from remaining and add to selected
+    remainingPlayers.splice(randomIndex, 1);
+    selectedOrder.push(selectedPlayerId);
+
+    console.log(`Position ${position}: ${selectedName}`);
+
+    // Send update showing this selection
+    io.emit('turnOrderUpdate', {
+      phase: 'selecting',
+      position: position,
+      justSelected: selectedPlayerId,
+      selectedOrder: selectedOrder.map((id, idx) => ({
+        playerId: id,
+        name: io.sockets.sockets.get(id)?.playerName || 'Unknown',
+        position: idx + 1
+      })),
+      remainingPlayers: remainingPlayers.map(id => ({
+        playerId: id,
+        name: io.sockets.sockets.get(id)?.playerName || 'Unknown'
+      }))
+    });
+
+    // Wait between selections (shorter for last one)
+    await new Promise(resolve => setTimeout(resolve, position < 4 ? 1500 : 1000));
+  }
+
+  // Update game state with new order
+  gameState.players = selectedOrder;
+  gameState.currentPlayerIndex = 0;
+
+  // Send final result
+  io.emit('turnOrderUpdate', {
+    phase: 'final',
+    selectedOrder: selectedOrder.map((id, idx) => ({
+      playerId: id,
+      name: io.sockets.sockets.get(id)?.playerName || 'Unknown',
+      position: idx + 1
+    }))
+  });
+
+  console.log('Turn order determined:', selectedOrder.map(id => {
+    const sock = io.sockets.sockets.get(id);
+    return sock ? sock.playerName : 'Unknown';
+  }));
+
+  // Wait to show final results
+  await new Promise(resolve => setTimeout(resolve, 3000));
+
+  // Countdown and start game
+  for (let i = 3; i > 0; i--) {
+    io.emit('turnOrderCountdown', i);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // Start the actual game
+  startGame();
+  broadcastGameState();
+}
+
 function startGame() {
   gameState.gameStarted = true;
   gameState.currentRound = 0;
@@ -197,13 +286,21 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Prevent multiple start attempts
+    if (gameState.gameStarted || gameState.gamePhase === 'turnOrder') {
+      console.log('Game already started or starting, ignoring duplicate start request');
+      return;
+    }
+
+    // Mark as starting
+    gameState.gamePhase = 'turnOrder';
+
     // Spawn AI players to fill up to 4 players
     spawnAIPlayers();
 
-    // Give AI players time to join
+    // Give AI players time to join, then determine turn order
     setTimeout(() => {
-      startGame();
-      broadcastGameState();
+      determineTurnOrder();
     }, 1000);
   });
 
@@ -258,6 +355,37 @@ io.on('connection', (socket) => {
         playerId: socket.id,
         timestamp: Date.now()
       });
+
+      // Calculate this player's priority (distance from current player)
+      const currentPlayerIndex = gameState.currentPlayerIndex;
+      const thisPlayerIndex = gameState.players.indexOf(socket.id);
+      const thisDistance = (thisPlayerIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
+
+      // Any player with lower priority (greater distance) who requested to buy
+      // should have their request automatically converted to a pass
+      if (!gameState.passedBuy) {
+        gameState.passedBuy = [];
+      }
+
+      const requestsToRemove = [];
+      gameState.buyRequests.forEach(req => {
+        if (req.playerId !== socket.id) {
+          const reqIndex = gameState.players.indexOf(req.playerId);
+          const reqDistance = (reqIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
+
+          // If this other request has lower priority (greater distance), convert to pass
+          if (reqDistance > thisDistance) {
+            requestsToRemove.push(req.playerId);
+            if (!gameState.passedBuy.includes(req.playerId)) {
+              gameState.passedBuy.push(req.playerId);
+              console.log(`Auto-passing ${io.sockets.sockets.get(req.playerId)?.playerName || 'Unknown'} - lower priority than ${socket.playerName}`);
+            }
+          }
+        }
+      });
+
+      // Remove the converted requests
+      gameState.buyRequests = gameState.buyRequests.filter(r => !requestsToRemove.includes(r.playerId));
     }
 
     broadcastGameState();
