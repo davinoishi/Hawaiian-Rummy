@@ -1,15 +1,29 @@
-# Hawaiian Rummy - Multiplayer
+# Hawaiian Rummy - Multiplayer Card Game
 
-Implemented with Node.js server and Socket.io for multiplayer gameplay.
+Complete implementation with AI opponents, multiplayer support, and comprehensive game mechanics. Implemented with Node.js server and Socket.io for real-time multiplayer gameplay.
 
 ## Features
 
-- 2-4 players can join from different browsers
+### Game Mechanics
+- 2-4 players (human + AI opponents)
+- **AI Players**: Intelligent AI opponents (Alex-AI, Jordan-AI, Taylor-AI) automatically fill empty seats
+- 10 rounds with increasing difficulty
+- Complete buy mechanism with priority system
+- Sets, runs, wildcards (2s and Jokers), and layoff functionality
+- Wildcard replacement in runs
 - Real-time game state synchronization
-- Lobby system with player list
 - Turn-based gameplay
 - Individual hand visibility
 - Player scores and meld tracking
+
+### User Interface
+- Clockwise player arrangement following turn order
+- Current player highlighting with colored background
+- Compact player info showing cards and melds
+- Always-visible action buttons (greyed when unavailable)
+- Buy countdown timer
+- How to Play guide accessible during gameplay
+- Drag-and-drop hand organization
 
 ## Setup
 1. Clone/Download repo
@@ -83,7 +97,11 @@ hawaiian-rummy-server/
 
 Open multiple browser windows/tabs to http://localhost:3001 to simulate multiple players.
 
-## Future Upates
+## Future Enhancements
 
-- AI players to fill empty seats
-- Game history and statistics
+- Game history and statistics tracking
+- Saved games and resume functionality
+- Tournament mode
+- Custom game rules configuration
+- Enhanced AI difficulty levels
+- Sound effects and animations

@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const AIPlayer = require('./aiPlayer');
 
 const app = express();
 app.use(cors());
@@ -42,6 +43,10 @@ let gameState = {
 const suits = ['♠', '♥', '♦', '♣'];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 
+// AI Players tracking
+let aiPlayers = [];
+const AI_NAMES = ['Alex-AI', 'Jordan-AI', 'Taylor-AI'];
+
 const roundRequirements = [
   { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], totalCards: 6, maxBuys: 3, description: "2 sets of 3" },
   { sets: 1, setSizes: [3], runs: 1, runSizes: [4], totalCards: 7, maxBuys: 3, description: "1 set of 3 and a run of 4" },
@@ -71,12 +76,49 @@ function createDeck() {
 }
 
 function shuffleDeck(deck) {
-  const shuffled = [...deck];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  let shuffled = [...deck];
+
+  // Perform Fisher-Yates shuffle multiple times for better randomization
+  for (let pass = 0; pass < 3; pass++) {
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
   }
+
   return shuffled;
+}
+
+// AI Player Management
+function spawnAIPlayers() {
+  const currentPlayerCount = gameState.players.length;
+  const aiNeeded = 4 - currentPlayerCount;
+
+  if (aiNeeded <= 0 || gameState.gameStarted) {
+    return;
+  }
+
+  console.log(`Spawning ${aiNeeded} AI player(s) to fill lobby...`);
+
+  for (let i = 0; i < aiNeeded && i < AI_NAMES.length; i++) {
+    const aiName = AI_NAMES[i];
+    const ai = new AIPlayer('http://localhost:3001', aiName);
+    ai.connect();
+    aiPlayers.push(ai);
+    console.log(`${aiName} spawned`);
+  }
+}
+
+function removeAllAIPlayers() {
+  console.log('Removing all AI players...');
+  aiPlayers.forEach(ai => {
+    try {
+      ai.disconnect();
+    } catch (error) {
+      console.error('Error disconnecting AI:', error);
+    }
+  });
+  aiPlayers = [];
 }
 
 function startNewRound() {
@@ -145,6 +187,9 @@ io.on('connection', (socket) => {
       }),
       gameStarted: gameState.gameStarted
     });
+
+    // Spawn AI players to fill to 4 players
+    setTimeout(() => spawnAIPlayers(), 500);
   });
 
   socket.on('startGame', () => {
@@ -153,8 +198,14 @@ io.on('connection', (socket) => {
       return;
     }
 
-    startGame();
-    broadcastGameState();
+    // Spawn AI players if needed before starting
+    spawnAIPlayers();
+
+    // Give AI players time to join
+    setTimeout(() => {
+      startGame();
+      broadcastGameState();
+    }, 1000);
   });
 
   socket.on('drawCard', () => {
@@ -162,24 +213,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Check if someone with higher priority wants to buy
-    const currentPlayerIndex = gameState.currentPlayerIndex;
-    const hasHigherPriorityBuy = gameState.buyRequests.some(req => {
-      const reqIndex = gameState.players.indexOf(req.playerId);
-      const reqDistance = (reqIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
-      return reqDistance > 0; // Anyone after current player has priority
-    });
-
-    if (hasHigherPriorityBuy) {
-      socket.emit('error', 'Waiting for buy requests to be processed');
+    // IMPORTANT: If there are active buy requests, current player CANNOT draw from deck
+    // They can only take the discard or pass to allow others to buy
+    if (gameState.buyRequests && gameState.buyRequests.length > 0) {
+      socket.emit('error', 'Cannot draw from deck while buy requests are pending. You must take the discard or pass.');
       return;
     }
 
     const card = gameState.deck.shift();
     gameState.playerHands[socket.id].push(card);
     gameState.gamePhase = 'meld';
-    gameState.buyJustProcessed = false; // Reset flag
-    
+    // DON'T reset buyJustProcessed here - wait until turn ends with discard
+    gameState.passedBuy = []; // Clear passes since we're moving on
+
     broadcastGameState();
   });
 
@@ -288,10 +334,11 @@ io.on('connection', (socket) => {
     const card = gameState.discardPile[gameState.discardPile.length - 1];
     gameState.playerHands[socket.id].push(card);
     gameState.gamePhase = 'meld';
-    
+
     // Clear any pending buy requests since current player took the card
     gameState.buyRequests = [];
-    
+    gameState.passedBuy = [];
+
     broadcastGameState();
   });
 
@@ -330,12 +377,18 @@ io.on('connection', (socket) => {
     
     gameState.playerMelds[socket.id].push({ type, cards: sortedCards });
     gameState.playerHands[socket.id] = hand.filter(c => !cardIds.includes(c.id));
-    
+
     // Check if requirements met
     if (checkMeldsMatchRequirements(socket.id)) {
       gameState.hasMetRequirements[socket.id] = true;
     }
-    
+
+    // Check if player won by melding all cards
+    if (gameState.playerHands[socket.id].length === 0 && gameState.hasMetRequirements[socket.id]) {
+      endRound(socket.id);
+      return;
+    }
+
     broadcastGameState();
   });
 
@@ -622,6 +675,9 @@ function getCardPoints(card) {
 }
 
 function resetGame() {
+  // Remove all AI players when resetting
+  removeAllAIPlayers();
+
   gameState = {
     players: [],
     gameStarted: false,
@@ -717,12 +773,11 @@ function broadcastGameState() {
         }
       });
       
-      // Current player can draw if:
-      // 1. It's their turn AND (no buy requests OR they are closer than any buyer)
-      const canDraw = isPlayerTurn(playerId) && (
-        gameState.buyRequests.length === 0 || 
-        nextBuyerDistance === Infinity
-      );
+      // Current player can draw ONLY if there are no pending buy requests
+      // If there are buy requests, they must take discard or pass
+      const canDraw = isPlayerTurn(playerId) &&
+                      gameState.gamePhase === 'draw' &&
+                      (!gameState.buyRequests || gameState.buyRequests.length === 0);
       
       // Player can buy if:
       // 1. Not their turn
@@ -730,20 +785,23 @@ function broadcastGameState() {
       // 3. Didn't discard the card (if someone has discarded)
       // 4. There's actually a card in the discard pile
       // 5. No one with higher priority (closer to current) has requested
+      // 6. A buy wasn't just processed (wait for current player to discard a new card)
       const canBuy = !isPlayerTurn(playerId) &&
                      gameState.gamePhase === 'draw' &&
                      gameState.buyCount[playerId] < maxBuys &&
                      (gameState.lastDiscarder === null || gameState.lastDiscarder !== playerId) &&
                      gameState.discardPile.length > 0 &&
-                     distance > 0;
+                     distance > 0 &&
+                     !gameState.buyJustProcessed;
       
       // Player should see pass button if:
       // 1. Someone wants to buy
       // 2. This player is current player OR between current and the buyer
       // 3. They haven't requested buy themselves
+      // NOTE: shouldShowPass and canBuy can BOTH be true - player can buy OR pass
       const shouldShowPass = gameState.buyRequests.length > 0 &&
                             !gameState.buyRequests.some(r => r.playerId === playerId) &&
-                            (isPlayerTurn(playerId) || 
+                            (isPlayerTurn(playerId) ||
                              (distance > 0 && gameState.buyRequests.some(req => {
                                const reqIndex = gameState.players.indexOf(req.playerId);
                                const reqDistance = (reqIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
@@ -831,37 +889,40 @@ function validateRun(cards) {
   // Try Aces low
   let sortedLow = values.map(v => v.low).sort((a, b) => a - b);
   let gapsLow = 0;
+  let maxGapLow = 0;
   for (let i = 1; i < sortedLow.length; i++) {
     const gap = sortedLow[i] - sortedLow[i-1] - 1;
     if (gap < 0) return false;
     gapsLow += gap;
+    if (gap > maxGapLow) maxGapLow = gap;
   }
-  // Check for wrap-around: if we have low cards (≤4) and high cards (≥11), it's wrapping
-  const hasLowCards = sortedLow.some(v => v <= 4);
-  const hasHighCards = sortedLow.some(v => v >= 11);
-  if (hasLowCards && hasHighCards) {
-    // This is a wrap-around like 2-3-J-Q-K-A, which is invalid
-    // Don't return true even if gaps can be filled
-  } else if (gapsLow <= wildCount) {
-    return true;
+  // Check if gaps can be filled with wildcards
+  if (gapsLow <= wildCount) {
+    // Additional check: make sure this isn't a wrap-around
+    // A wrap-around (like K-A-2-3) would have a very large gap (8+) in the middle
+    // A normal run (like 3-4-5-6-7-8-J-Q-K) has small fillable gaps
+    if (maxGapLow <= 7) {
+      return true;
+    }
   }
 
   // Try Aces high
   let sortedHigh = values.map(v => v.high).sort((a, b) => a - b);
   let gapsHigh = 0;
+  let maxGapHigh = 0;
   for (let i = 1; i < sortedHigh.length; i++) {
     const gap = sortedHigh[i] - sortedHigh[i-1] - 1;
     if (gap < 0) return false;
     gapsHigh += gap;
+    if (gap > maxGapHigh) maxGapHigh = gap;
   }
-  // Check for wrap-around: if we have low cards (≤4) and high cards (≥11), it's wrapping
-  const hasLowCardsHigh = sortedHigh.some(v => v <= 4);
-  const hasHighCardsHigh = sortedHigh.some(v => v >= 11);
-  if (hasLowCardsHigh && hasHighCardsHigh) {
-    // This is a wrap-around, which is invalid
-    return false;
-  } else if (gapsHigh <= wildCount) {
-    return true;
+  // Check if gaps can be filled with wildcards
+  if (gapsHigh <= wildCount) {
+    // Additional check: make sure this isn't a wrap-around
+    // A wrap-around would have a very large gap (8+) in the middle
+    if (maxGapHigh <= 7) {
+      return true;
+    }
   }
 
   return false;
