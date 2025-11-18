@@ -188,17 +188,16 @@ io.on('connection', (socket) => {
       gameStarted: gameState.gameStarted
     });
 
-    // Spawn AI players to fill to 4 players
-    setTimeout(() => spawnAIPlayers(), 500);
+    // Don't spawn AI players yet - wait for Start Game to be clicked
   });
 
   socket.on('startGame', () => {
-    if (gameState.players.length < 2) {
-      socket.emit('error', 'Need at least 2 players to start');
+    if (gameState.players.length < 1) {
+      socket.emit('error', 'Need at least 1 player to start');
       return;
     }
 
-    // Spawn AI players if needed before starting
+    // Spawn AI players to fill up to 4 players
     spawnAIPlayers();
 
     // Give AI players time to join
@@ -822,7 +821,8 @@ function broadcastGameState() {
             melds: gameState.playerMelds[id] || [],
             buyCount: gameState.buyCount[id] || 0,
             roundsWon: gameState.roundsWon[id] || 0,
-            roundScores: gameState.roundScores[id] || []
+            roundScores: gameState.roundScores[id] || [],
+            isMe: id === playerId  // Add flag to identify current player
           };
         }),
         myHand: gameState.playerHands[playerId] || [],

@@ -193,8 +193,9 @@ class AIPlayer {
       await this.sleepAsync(300);
     }
 
-    // If we've met requirements, try to layoff high-value cards
-    if (currentState.hasMetRequirements) {
+    // If we've met requirements OR just created melds, try to layoff high-value cards
+    // (We check possibleMelds because hasMetRequirements might not be updated yet)
+    if (currentState.hasMetRequirements || possibleMelds.length > 0) {
       await this.handleLayoffPhase(currentState);
     }
 
@@ -624,11 +625,26 @@ class AIPlayer {
       const nonWildCard = meld.cards.find(c => !c.isWild);
       return nonWildCard && card.rank === nonWildCard.rank;
     } else if (meld.type === 'run') {
-      // For runs, this is simplified - just check suit matches
+      // For runs, check if card is adjacent to the run
       if (card.isWild) return true;
 
       const nonWildCard = meld.cards.find(c => !c.isWild);
-      return nonWildCard && card.suit === nonWildCard.suit;
+      if (!nonWildCard || card.suit !== nonWildCard.suit) {
+        return false; // Must match suit
+      }
+
+      // Get all card values in the run and check if our card extends it
+      const runValues = meld.cards
+        .filter(c => !c.isWild)
+        .map(c => this.getCardValue(c))
+        .sort((a, b) => a - b);
+
+      const cardValue = this.getCardValue(card);
+      const minRunValue = runValues[0];
+      const maxRunValue = runValues[runValues.length - 1];
+
+      // Card must be adjacent to the run (one before min or one after max)
+      return cardValue === minRunValue - 1 || cardValue === maxRunValue + 1;
     }
 
     return false;

@@ -38,6 +38,7 @@
           const [wildcardPositionPrompt, setWildcardPositionPrompt] = useState(null);
           const [buyCountdown, setBuyCountdown] = useState(null);
           const buyCountdownRef = useRef(null);
+          const [animatingCard, setAnimatingCard] = useState(null);
 
           const roundRequirements = [
             { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
@@ -133,13 +134,23 @@
           };
 
           const drawCard = () => {
-            socket.emit('drawCard');
-            setSelectedCards([]);
+            // Trigger animation
+            setAnimatingCard({ type: 'draw', from: 'deck', to: 'hand' });
+            setTimeout(() => {
+              socket.emit('drawCard');
+              setSelectedCards([]);
+              setTimeout(() => setAnimatingCard(null), 300);
+            }, 300);
           };
 
           const takeDiscard = () => {
-            socket.emit('takeDiscard');
-            setSelectedCards([]);
+            // Trigger animation
+            setAnimatingCard({ type: 'takeDiscard', from: 'discard', to: 'hand' });
+            setTimeout(() => {
+              socket.emit('takeDiscard');
+              setSelectedCards([]);
+              setTimeout(() => setAnimatingCard(null), 300);
+            }, 300);
           };
 
           const createMeld = (type) => {
@@ -239,8 +250,13 @@
               setMessage('Select exactly one card to discard');
               return;
             }
-            socket.emit('discard', selectedCards[0]);
-            setSelectedCards([]);
+            // Trigger animation
+            setAnimatingCard({ type: 'discard', from: 'hand', to: 'discard' });
+            setTimeout(() => {
+              socket.emit('discard', selectedCards[0]);
+              setSelectedCards([]);
+              setTimeout(() => setAnimatingCard(null), 300);
+            }, 300);
           };
 
           const toggleCardSelection = (cardId) => {
@@ -587,7 +603,7 @@
                     </div>
                     <button
                       onClick={startGame}
-                      disabled={lobbyPlayers.length < 2}
+                      disabled={lobbyPlayers.length < 1}
                       className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed mb-3"
                     >
                       Start Game
@@ -599,7 +615,7 @@
                       📖 How to Play
                     </button>
                     <p className="mt-4 text-sm text-gray-600 text-center">
-                      {lobbyPlayers.length < 2 ? 'Need at least 2 players to start' : 'Ready to start!'}
+                      {lobbyPlayers.length < 1 ? 'Waiting for players...' : `Ready to start! (${lobbyPlayers.length} human, AI will fill to 4)`}
                     </p>
                   </div>
                 </div>
@@ -784,8 +800,51 @@
                     </div>
                   </div>
 
-                {/* Players info with cards and melds - Arranged clockwise */}
-                <div className="relative mb-4" style={{ minHeight: '600px' }}>
+                {/* Players info with cards and melds - Arranged clockwise with center */}
+                <div className="grid grid-cols-3 gap-4 mb-4" style={{ gridTemplateRows: 'auto auto auto' }}>
+                  {/* Center area for visual deck and discard pile */}
+                  <div className="col-start-2 row-start-2 flex items-center justify-center gap-4 p-4">
+                    {/* Visual Discard Pile */}
+                    <div className="relative">
+                      {gameState.discardPile.length > 0 ? (
+                        <div
+                          className="bg-white border-2 border-gray-800 rounded p-3 w-20 text-center shadow-lg"
+                          style={{
+                            transform: animatingCard?.type === 'discard' ? 'scale(1.1)' : 'scale(1)',
+                            transition: 'transform 0.3s ease-in-out'
+                          }}
+                        >
+                          <div className={`text-2xl font-bold ${getCardColor(gameState.discardPile[gameState.discardPile.length - 1].suit)}`}>
+                            {gameState.discardPile[gameState.discardPile.length - 1].rank}
+                          </div>
+                          <div className={`text-xl ${getCardColor(gameState.discardPile[gameState.discardPile.length - 1].suit)}`}>
+                            {gameState.discardPile[gameState.discardPile.length - 1].suit}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-20 h-28 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-xs text-gray-400">
+                          Discard
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Visual Deck */}
+                    <div className="relative">
+                      <div
+                        className="bg-blue-900 text-white rounded p-3 w-20 text-center flex flex-col items-center justify-center shadow-lg"
+                        style={{
+                          transform: animatingCard?.type === 'draw' ? 'scale(1.1)' : 'scale(1)',
+                          transition: 'transform 0.3s ease-in-out'
+                        }}
+                      >
+                        <svg className="mb-1" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <rect x="4" y="4" width="16" height="16" rx="2" />
+                        </svg>
+                        <div className="text-xs">{gameState.deckSize}</div>
+                      </div>
+                    </div>
+                  </div>
+
                   {gameState.players.map((player, idx) => {
                     const isCurrentPlayer = idx === gameState.currentPlayerIndex;
                     const isMe = player.isMe;
@@ -795,29 +854,29 @@
                     const myIndex = gameState.players.findIndex(p => p.isMe);
 
                     // Calculate clockwise position:
-                    // 0 (me) = bottom, 1 = left, 2 = top, 3 = right
+                    // TRUE CLOCKWISE (like a clock face): 0 (me/bottom) = 6 o'clock, 1 = 9 o'clock (left), 2 = 12 o'clock (top), 3 = 3 o'clock (right)
                     const relativePosition = (idx - myIndex + gameState.players.length) % gameState.players.length;
 
-                    // Position styles based on clockwise arrangement
-                    let positionStyle = '';
+                    // Grid position styles based on TRUE CLOCKWISE arrangement
+                    let gridPosition = '';
                     if (relativePosition === 0) {
-                      // Me - bottom center
-                      positionStyle = 'absolute bottom-0 left-1/2 transform -translate-x-1/2 w-[48%]';
+                      // Me - bottom center (6 o'clock) (row 3, col 2) - directly above discard and hand sections
+                      gridPosition = 'col-start-2 row-start-3';
                     } else if (relativePosition === 1) {
-                      // Left player
-                      positionStyle = 'absolute left-0 top-1/2 transform -translate-y-1/2 w-[48%]';
+                      // LEFT player - clockwise next from me (9 o'clock) (row 2, col 1)
+                      gridPosition = 'col-start-1 row-start-2';
                     } else if (relativePosition === 2) {
-                      // Top player (across)
-                      positionStyle = 'absolute top-0 left-1/2 transform -translate-x-1/2 w-[48%]';
+                      // TOP player - across from me (12 o'clock) (row 1, col 2)
+                      gridPosition = 'col-start-2 row-start-1';
                     } else if (relativePosition === 3) {
-                      // Right player
-                      positionStyle = 'absolute right-0 top-1/2 transform -translate-y-1/2 w-[48%]';
+                      // RIGHT player - clockwise before me (3 o'clock) (row 2, col 3)
+                      gridPosition = 'col-start-3 row-start-2';
                     }
 
                     return (
                       <div
                         key={player.id}
-                        className={`${positionStyle} rounded-lg p-4 transition-all ${
+                        className={`${gridPosition} rounded-lg p-4 transition-all ${
                           isCurrentPlayer
                             ? 'bg-blue-100 ring-4 ring-blue-500'
                             : 'bg-white'
@@ -865,7 +924,7 @@
                           {player.melds.length === 0 ? (
                             <div className="text-xs text-gray-400">None</div>
                           ) : (
-                            <div className="space-y-2">
+                            <div className="space-y-2 max-h-80 overflow-y-auto">
                               {player.melds.map((meld, meldIdx) => {
                                 const isCompatible = layoffMode && selectedCards.length === 1;
 
