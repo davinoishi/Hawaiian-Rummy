@@ -1,4 +1,4 @@
-# Hawaiian Rummy - Multiplayer Card Game
+# Hawaiian Rummy - Multiplayer Card Game (supports up to 4 players)
 
 This is a version of Rummy I played as a kid with my family. Since it's rules are unique, I had to build the game from scratch. This is completely vibe coded with Claude Code. It's a simple web app. The instructions to install manually or via noBGP piGPT or noBGP MCP are below.
 
