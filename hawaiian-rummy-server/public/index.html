@@ -51,6 +51,11 @@
           display: none !important;
         }
 
+        /* Hide player's own hand info section on mobile */
+        .player-hand-section {
+          display: none !important;
+        }
+
         /* Remove scrolling from melds on mobile - expand to show all */
         .player-melds {
           max-height: none !important;
@@ -123,17 +128,17 @@
 
         /* Smaller cards on mobile */
         .card-mobile {
-          width: 3.5rem !important;
-          height: 5rem !important;
-          padding: 0.375rem !important;
+          width: 2.8rem !important;
+          height: 4rem !important;
+          padding: 0.3rem !important;
         }
 
         .card-mobile .rank-text {
-          font-size: 1.125rem !important;
+          font-size: 0.9rem !important;
         }
 
         .card-mobile .suit-text {
-          font-size: 0.875rem !important;
+          font-size: 0.7rem !important;
         }
 
         /* Compact hand actions */
@@ -2276,7 +2281,7 @@
                         </div>
 
                         {/* Player's hand (cards for human, card backs for AI) */}
-                        <div className="mb-2">
+                        <div className={`mb-2 ${isMe ? 'player-hand-section' : ''}`}>
                           <div className="text-sm font-semibold mb-1">Hand: {player.handSize} card{player.handSize !== 1 ? 's' : ''}</div>
                           <div className="flex flex-wrap gap-1">
                             {isMe ? (
