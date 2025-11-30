@@ -22,6 +22,14 @@
           display: none !important;
         }
 
+        /* Vertical stacking on mobile */
+        .players-grid {
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 0.5rem !important;
+          margin-bottom: 0.5rem !important;
+        }
+
         /* Compact player info boxes */
         .player-info-box {
           padding: 0.5rem !important;
@@ -137,11 +145,123 @@
           padding: 0.5rem !important;
         }
 
-        /* Make player grid more compact */
-        .players-grid {
+        /* Sound controls - stack vertically on mobile */
+        .sound-controls-mobile {
+          flex-direction: column !important;
           gap: 0.5rem !important;
-          margin-bottom: 0.5rem !important;
         }
+      }
+
+      /* Touch-friendly buttons - increase touch targets */
+      @media (hover: none) and (pointer: coarse) {
+        button {
+          min-height: 44px !important;
+          min-width: 44px !important;
+          padding: 0.75rem 1rem !important;
+        }
+
+        .card-mobile {
+          min-width: 60px !important;
+          min-height: 85px !important;
+        }
+
+        /* Larger tap targets for interactive elements */
+        input[type="range"] {
+          height: 30px !important;
+        }
+      }
+
+      /* Tablet landscape mode optimization */
+      @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
+        .players-grid {
+          grid-template-columns: repeat(4, 1fr) !important;
+        }
+
+        .center-visual-cards {
+          grid-column: 2 / 4 !important;
+        }
+
+        .main-container {
+          padding: 1rem !important;
+        }
+      }
+
+      /* Card zoom overlay */
+      .card-zoom-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        animation: fadeIn 0.2s ease-in;
+      }
+
+      .card-zoom-content {
+        background: white;
+        border: 4px solid #1f2937;
+        border-radius: 1rem;
+        padding: 2rem;
+        width: 200px;
+        height: 280px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        animation: zoomIn 0.2s ease-out;
+      }
+
+      .card-zoom-rank {
+        font-size: 4rem !important;
+        font-weight: bold;
+      }
+
+      .card-zoom-suit {
+        font-size: 3rem !important;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+
+      @keyframes zoomIn {
+        from { transform: scale(0.5); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+
+      /* Collapsible sections */
+      .collapsible-header {
+        cursor: pointer;
+        user-select: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .collapsible-indicator {
+        transition: transform 0.3s ease;
+      }
+
+      .collapsible-indicator.collapsed {
+        transform: rotate(-90deg);
+      }
+
+      .collapsible-content {
+        max-height: 1000px;
+        overflow: hidden;
+        transition: max-height 0.3s ease, opacity 0.3s ease;
+        opacity: 1;
+      }
+
+      .collapsible-content.collapsed {
+        max-height: 0 !important;
+        opacity: 0;
       }
 
       /* Animation keyframes */
@@ -368,6 +488,13 @@
           const [isMuted, setIsMuted] = useState(false);
           const audioContextRef = useRef(null);
 
+          // Mobile features state
+          const [zoomedCard, setZoomedCard] = useState(null); // Card being zoomed/enlarged
+          const [collapsedSections, setCollapsedSections] = useState({}); // Track collapsed sections
+          const [touchStart, setTouchStart] = useState(null); // For swipe gesture detection
+          const [lastTap, setLastTap] = useState(0); // For double-tap detection
+          const [swipeDirection, setSwipeDirection] = useState(null); // Track swipe direction
+
           const roundRequirements = [
             { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
             { sets: 1, setSizes: [3], runs: 1, runSizes: [4], description: "1 set of 3 and a run of 4" },
@@ -487,6 +614,83 @@
                 break;
               }
             }
+          };
+
+          // Mobile utility functions
+
+          // Card zoom handler - tap to enlarge card
+          const handleCardTap = (card) => {
+            setZoomedCard(card);
+          };
+
+          // Close zoomed card overlay
+          const closeZoom = () => {
+            setZoomedCard(null);
+          };
+
+          // Toggle collapsible section
+          const toggleSection = (sectionId) => {
+            setCollapsedSections(prev => ({
+              ...prev,
+              [sectionId]: !prev[sectionId]
+            }));
+          };
+
+          // Handle touch start for swipe gestures
+          const handleTouchStart = (e) => {
+            setTouchStart({
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+              time: Date.now()
+            });
+          };
+
+          // Handle touch end for swipe detection
+          const handleTouchEnd = (e, cardId) => {
+            if (!touchStart) return;
+
+            const touchEnd = {
+              x: e.changedTouches[0].clientX,
+              y: e.changedTouches[0].clientY,
+              time: Date.now()
+            };
+
+            const deltaX = touchEnd.x - touchStart.x;
+            const deltaY = touchEnd.y - touchStart.y;
+            const deltaTime = touchEnd.time - touchStart.time;
+
+            // Check if it's a swipe (moved > 50px in < 300ms)
+            if (Math.abs(deltaX) > 50 && deltaTime < 300) {
+              if (deltaX > 0) {
+                setSwipeDirection('right');
+                // Swipe right could select card
+                if (cardId && !selectedCards.includes(cardId)) {
+                  toggleCardSelection(cardId);
+                }
+              } else {
+                setSwipeDirection('left');
+                // Swipe left could deselect card
+                if (cardId && selectedCards.includes(cardId)) {
+                  toggleCardSelection(cardId);
+                }
+              }
+              setTimeout(() => setSwipeDirection(null), 300);
+            }
+
+            setTouchStart(null);
+          };
+
+          // Handle double-tap for quick select
+          const handleDoubleTap = (cardId) => {
+            const now = Date.now();
+            const DOUBLE_TAP_DELAY = 300;
+
+            if (now - lastTap < DOUBLE_TAP_DELAY) {
+              // Double tap detected - toggle selection
+              toggleCardSelection(cardId);
+            }
+
+            setLastTap(now);
           };
 
           useEffect(() => {
@@ -1029,6 +1233,28 @@
                       Cancel
                     </button>
                   </div>
+                </div>
+              </div>
+            );
+          };
+
+          // Card Zoom Modal Component
+          const CardZoomModal = () => {
+            if (!zoomedCard) return null;
+
+            return (
+              <div className="card-zoom-overlay" onClick={closeZoom}>
+                <div className="card-zoom-content" onClick={(e) => e.stopPropagation()}>
+                  <div className={`card-zoom-rank ${getCardColor(zoomedCard.suit)}`}>
+                    {zoomedCard.rank}
+                  </div>
+                  <div className={`card-zoom-suit ${getCardColor(zoomedCard.suit)}`}>
+                    {zoomedCard.suit}
+                  </div>
+                  {zoomedCard.isWild && (
+                    <div className="text-sm text-purple-600 font-bold mt-2">WILD</div>
+                  )}
+                  <div className="mt-4 text-sm text-gray-600">Tap anywhere to close</div>
                 </div>
               </div>
             );
@@ -1774,6 +2000,7 @@
               <WildcardPositionModal />
               <MeldWildcardPositionModal />
               <HowToPlayModal />
+              <CardZoomModal />
               <div className="min-h-screen bg-green-800 p-4 main-container">
                 <div className="max-w-7xl mx-auto">
                 {/* Players info with cards and melds - Arranged clockwise with center */}
@@ -2167,7 +2394,16 @@
                           onDragLeave={handleDragLeave}
                           onDragEnd={handleDragEnd}
                           onDrop={(e) => handleDrop(e, card.id)}
-                          onClick={() => toggleCardSelection(card.id)}
+                          onClick={() => {
+                            toggleCardSelection(card.id);
+                            handleDoubleTap(card.id);
+                          }}
+                          onTouchStart={handleTouchStart}
+                          onTouchEnd={(e) => handleTouchEnd(e, card.id)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            handleCardTap(card);
+                          }}
                           className={`bg-white border-2 rounded p-3 w-20 h-24 text-center cursor-move transition-all select-none relative card-mobile ${
                             selectedCards.includes(card.id)
                               ? 'border-blue-500 bg-blue-50 transform -translate-y-2'
