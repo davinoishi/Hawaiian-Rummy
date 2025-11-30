@@ -705,6 +705,26 @@
                 noise.stop(now + 0.3);
                 break;
               }
+              case 'countdownBeep': {
+                // Short beep for countdown 3, 2, 1
+                const osc = audioContext.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 800;
+                osc.connect(gainNode);
+                osc.start(now);
+                osc.stop(now + 0.15);
+                break;
+              }
+              case 'countdownFinal': {
+                // Long beep for countdown 0
+                const osc = audioContext.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = 600;
+                osc.connect(gainNode);
+                osc.start(now);
+                osc.stop(now + 0.45); // 3x longer than short beep
+                break;
+              }
             }
           };
 
@@ -976,6 +996,19 @@
               }
             };
           }, [gameState?.buyRequests?.length, gameState?.hasPassed]);
+
+          // Countdown sound effect
+          useEffect(() => {
+            if (turnOrderCountdown !== null) {
+              if (turnOrderCountdown === 3 || turnOrderCountdown === 2 || turnOrderCountdown === 1) {
+                // Short beep for 3, 2, 1
+                playSound('countdownBeep');
+              } else if (turnOrderCountdown === 0) {
+                // Long beep for 0
+                playSound('countdownFinal');
+              }
+            }
+          }, [turnOrderCountdown]);
 
           // Track new cards added to hand for animation
           useEffect(() => {
