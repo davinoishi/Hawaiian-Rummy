@@ -150,6 +150,36 @@
           flex-direction: column !important;
           gap: 0.5rem !important;
         }
+
+        /* Mobile layout reorganization - use flexbox order */
+        .mobile-layout-container {
+          display: flex !important;
+          flex-direction: column !important;
+        }
+
+        /* Order for mobile: discard/actions, hand, melds, scores, controls */
+        .mobile-order-1 { order: 1; } /* Discard pile and action buttons at TOP */
+        .mobile-order-2 { order: 2; } /* Your Hand section */
+        .mobile-order-3 { order: 3; } /* All players melds */
+        .mobile-order-4 { order: 4; } /* Player scores section */
+        .mobile-order-5 { order: 5; } /* Volume control and How to Play button at BOTTOM */
+
+        /* Scores section styling for mobile */
+        .scores-section {
+          padding: 0.75rem !important;
+          margin-bottom: 0.5rem !important;
+        }
+
+        .scores-section h2 {
+          font-size: 1rem !important;
+          margin-bottom: 0.5rem !important;
+        }
+
+        .score-player {
+          font-size: 0.75rem !important;
+          padding: 0.5rem !important;
+          margin-bottom: 0.25rem !important;
+        }
       }
 
       /* Touch-friendly buttons - increase touch targets */
@@ -494,6 +524,8 @@
           const [touchStart, setTouchStart] = useState(null); // For swipe gesture detection
           const [lastTap, setLastTap] = useState(0); // For double-tap detection
           const [swipeDirection, setSwipeDirection] = useState(null); // Track swipe direction
+          const [touchDraggedCardId, setTouchDraggedCardId] = useState(null); // Card being touch-dragged
+          const [touchDragPosition, setTouchDragPosition] = useState(null); // Current touch position
 
           const roundRequirements = [
             { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
@@ -636,17 +668,38 @@
             }));
           };
 
-          // Handle touch start for swipe gestures
-          const handleTouchStart = (e) => {
+          // Handle touch start for card dragging and reordering
+          const handleCardTouchStart = (e, cardId) => {
+            const touch = e.touches[0];
             setTouchStart({
-              x: e.touches[0].clientX,
-              y: e.touches[0].clientY,
-              time: Date.now()
+              x: touch.clientX,
+              y: touch.clientY,
+              time: Date.now(),
+              cardId: cardId
             });
+            setTouchDraggedCardId(cardId);
+            setTouchDragPosition({ x: touch.clientX, y: touch.clientY });
           };
 
-          // Handle touch end for swipe detection
-          const handleTouchEnd = (e, cardId) => {
+          // Handle touch move for card dragging
+          const handleCardTouchMove = (e, cardId) => {
+            if (!touchStart || touchStart.cardId !== cardId) return;
+
+            e.preventDefault(); // Prevent scrolling while dragging
+            const touch = e.touches[0];
+            setTouchDragPosition({ x: touch.clientX, y: touch.clientY });
+
+            // Find the card element at the current touch position
+            const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
+            const cardElement = elements.find(el => el.classList.contains('card-mobile') && el.dataset.cardId);
+
+            if (cardElement && cardElement.dataset.cardId !== cardId) {
+              setDragOverCardId(cardElement.dataset.cardId);
+            }
+          };
+
+          // Handle touch end for card drop and reordering
+          const handleCardTouchEnd = (e, cardId) => {
             if (!touchStart) return;
 
             const touchEnd = {
@@ -658,25 +711,59 @@
             const deltaX = touchEnd.x - touchStart.x;
             const deltaY = touchEnd.y - touchStart.y;
             const deltaTime = touchEnd.time - touchStart.time;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-            // Check if it's a swipe (moved > 50px in < 300ms)
-            if (Math.abs(deltaX) > 50 && deltaTime < 300) {
-              if (deltaX > 0) {
-                setSwipeDirection('right');
-                // Swipe right could select card
-                if (cardId && !selectedCards.includes(cardId)) {
-                  toggleCardSelection(cardId);
-                }
-              } else {
-                setSwipeDirection('left');
-                // Swipe left could deselect card
-                if (cardId && selectedCards.includes(cardId)) {
-                  toggleCardSelection(cardId);
+            // If moved significantly, treat as drag/reorder
+            if (distance > 30 && touchStart.cardId === cardId) {
+              // Find target card at drop position
+              const elements = document.elementsFromPoint(touchEnd.x, touchEnd.y);
+              const targetElement = elements.find(el =>
+                el.classList.contains('card-mobile') &&
+                el.dataset.cardId &&
+                el.dataset.cardId !== cardId
+              );
+
+              if (targetElement && dragOverCardId) {
+                // Perform reorder
+                const hand = gameState.myHand;
+                const draggedIndex = hand.findIndex(c => c.id === cardId);
+                const targetIndex = hand.findIndex(c => c.id === dragOverCardId);
+
+                if (draggedIndex !== -1 && targetIndex !== -1) {
+                  const newHand = [...hand];
+                  const [draggedCard] = newHand.splice(draggedIndex, 1);
+                  newHand.splice(targetIndex, 0, draggedCard);
+                  socket.emit('reorderHand', newHand.map(c => c.id));
                 }
               }
-              setTimeout(() => setSwipeDirection(null), 300);
+            } else if (distance < 30 && deltaTime < 300) {
+              // Short tap - toggle selection or handle as tap
+              handleDoubleTap(cardId);
             }
 
+            // Reset drag state
+            setTouchStart(null);
+            setTouchDraggedCardId(null);
+            setTouchDragPosition(null);
+            setDragOverCardId(null);
+          };
+
+          // Legacy touch handlers for backward compatibility
+          const handleTouchStart = (e) => {
+            setTouchStart({
+              x: e.touches[0].clientX,
+              y: e.touches[0].clientY,
+              time: Date.now()
+            });
+          };
+
+          const handleTouchEnd = (e, cardId) => {
+            if (!touchStart) return;
+            const touchEnd = {
+              x: e.changedTouches[0].clientX,
+              y: e.changedTouches[0].clientY,
+              time: Date.now()
+            };
             setTouchStart(null);
           };
 
@@ -2002,9 +2089,9 @@
               <HowToPlayModal />
               <CardZoomModal />
               <div className="min-h-screen bg-green-800 p-4 main-container">
-                <div className="max-w-7xl mx-auto">
+                <div className="max-w-7xl mx-auto mobile-layout-container">
                 {/* Players info with cards and melds - Arranged clockwise with center */}
-                <div className="grid grid-cols-3 gap-4 mb-4 players-grid" style={{ gridTemplateRows: 'auto auto auto' }}>
+                <div className="grid grid-cols-3 gap-4 mb-4 players-grid mobile-order-3" style={{ gridTemplateRows: 'auto auto auto' }}>
                   {/* Center area for visual deck and discard pile */}
                   <div className="col-start-2 row-start-2 flex flex-col items-center justify-center gap-2 p-4 center-visual-cards">
                     {/* Round Indicator */}
@@ -2062,7 +2149,7 @@
                   </div>
 
                   {/* Sound Controls and How to Play Button - Top Right */}
-                  <div className="col-start-3 row-start-1 flex items-start justify-end gap-3 p-4">
+                  <div className="col-start-3 row-start-1 flex items-start justify-end gap-3 p-4 mobile-order-5">
                     {/* Sound Controls */}
                     <div className="bg-white/90 backdrop-blur px-3 py-2 rounded shadow-lg flex items-center gap-2">
                       {/* Mute Button */}
@@ -2274,7 +2361,7 @@
                 </div>
 
                 {/* Discard pile and deck */}
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-4 discard-section">
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-4 discard-section mobile-order-1">
                   <h2 className="text-xl font-bold mb-3">Discard Pile & Actions</h2>
                   <div className="flex gap-4 items-start">
                     {/* Discard pile and deck */}
@@ -2371,7 +2458,7 @@
                 </div>
 
                 {/* My hand */}
-                <div className="bg-white rounded-lg shadow-lg p-6 mb-4 hand-section">
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-4 hand-section mobile-order-2">
                   <h2 className="text-xl font-bold mb-3">Your Hand ({gameState.myHand.length} cards) - Drag to reorder</h2>
                   <div className="flex flex-wrap gap-1 min-h-[120px]">
                     {gameState.myHand.map((card, index) => (
@@ -2388,6 +2475,7 @@
                         )}
                         <div
                           draggable
+                          data-card-id={card.id}
                           onDragStart={(e) => handleDragStart(e, card.id)}
                           onDragOver={(e) => handleDragOver(e, card.id)}
                           onDragEnter={(e) => handleDragEnter(e, card.id)}
@@ -2396,10 +2484,10 @@
                           onDrop={(e) => handleDrop(e, card.id)}
                           onClick={() => {
                             toggleCardSelection(card.id);
-                            handleDoubleTap(card.id);
                           }}
-                          onTouchStart={handleTouchStart}
-                          onTouchEnd={(e) => handleTouchEnd(e, card.id)}
+                          onTouchStart={(e) => handleCardTouchStart(e, card.id)}
+                          onTouchMove={(e) => handleCardTouchMove(e, card.id)}
+                          onTouchEnd={(e) => handleCardTouchEnd(e, card.id)}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             handleCardTap(card);
@@ -2407,10 +2495,10 @@
                           className={`bg-white border-2 rounded p-3 w-20 h-24 text-center cursor-move transition-all select-none relative card-mobile ${
                             selectedCards.includes(card.id)
                               ? 'border-blue-500 bg-blue-50 transform -translate-y-2'
-                              : dragOverCardId === card.id && draggedCardId !== card.id
+                              : dragOverCardId === card.id && (draggedCardId !== card.id || touchDraggedCardId !== card.id)
                                 ? 'border-blue-400 bg-blue-50'
                                 : 'border-gray-800 hover:bg-gray-50'
-                          } ${draggedCardId === card.id ? 'opacity-50 scale-95' : ''} ${newCardIds.has(card.id) ? 'card-deal' : ''}`}
+                          } ${(draggedCardId === card.id || touchDraggedCardId === card.id) ? 'opacity-50 scale-95' : ''} ${newCardIds.has(card.id) ? 'card-deal' : ''}`}
                         >
                           <div className={`text-2xl font-bold rank-text ${getCardColor(card.suit)}`}>
                             {card.rank}
@@ -2485,6 +2573,40 @@
                         Discard Selected
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                {/* Player Scores Section - Shows all players' scores and games won */}
+                <div className="bg-white rounded-lg shadow-lg p-6 mb-4 scores-section mobile-order-4">
+                  <h2 className="text-xl font-bold mb-3">Player Scores</h2>
+                  <div className="space-y-2">
+                    {gameState.players.map((player, idx) => {
+                      const isMe = player.isMe;
+                      return (
+                        <div
+                          key={player.id}
+                          className={`rounded p-3 score-player ${
+                            isMe
+                              ? 'bg-blue-100 border-2 border-blue-500'
+                              : 'bg-gray-50 border border-gray-300'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="font-bold">{player.name}{isMe ? ' (You)' : ''}</div>
+                            <div className="flex gap-4">
+                              <div className="text-sm">
+                                <span className="text-gray-600">Score:</span>{' '}
+                                <strong className="text-lg">{player.score}</strong>
+                              </div>
+                              <div className="text-sm">
+                                <span className="text-gray-600">Games Won:</span>{' '}
+                                <strong className="text-lg">{player.roundsWon || 0}</strong>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
                 </div>
