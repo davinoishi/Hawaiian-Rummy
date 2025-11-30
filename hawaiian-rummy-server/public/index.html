@@ -148,22 +148,49 @@
           bottom: auto !important;
         }
 
-        /* Abbreviate WILD to W on mobile */
+        /* Abbreviate WILD to W on mobile - ensure it stays inside card */
+        .card-mobile .wild-indicator {
+          position: relative !important;
+          font-size: 0.4rem !important;
+          bottom: auto !important;
+          left: auto !important;
+          right: auto !important;
+          margin-top: 0.1rem !important;
+        }
+
+        /* Hide original WILD text and show W instead */
         .card-mobile .absolute.bottom-1 {
-          font-size: 0.5rem !important;
-          bottom: 0.1rem !important;
+          position: relative !important;
+          font-size: 0 !important;
+          bottom: auto !important;
+          left: auto !important;
+          right: auto !important;
+          margin-top: 0.1rem !important;
         }
 
         .card-mobile .absolute.bottom-1::before {
           content: 'W' !important;
+          font-size: 0.4rem !important;
         }
 
-        .card-mobile .absolute.bottom-1 {
-          font-size: 0 !important;
+        /* Enhanced dragging visual feedback on mobile */
+        @media (max-width: 768px) {
+          .card-mobile.opacity-50 {
+            opacity: 0.3 !important;
+          }
+
+          .card-mobile.scale-95 {
+            transform: scale(1.1) !important;
+          }
         }
 
-        .card-mobile .absolute.bottom-1::before {
-          font-size: 0.5rem !important;
+        /* More prominent drop indicator on mobile */
+        @media (max-width: 768px) {
+          .drop-indicator-mobile {
+            width: 0.25rem !important;
+            background: linear-gradient(to bottom, #3b82f6, #1d4ed8) !important;
+            box-shadow: 0 0 12px rgba(59, 130, 246, 1), 0 0 6px rgba(59, 130, 246, 0.8) !important;
+          }
         }
 
         /* Compact hand actions */
@@ -778,8 +805,8 @@
             const deltaTime = touchEnd.time - touchStart.time;
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-            // If moved significantly, treat as drag/reorder
-            if (distance > 30 && touchStart.cardId === cardId) {
+            // If moved significantly, treat as drag/reorder (reduced threshold from 30px to 15px for easier dragging on mobile)
+            if (distance > 15 && touchStart.cardId === cardId) {
               // Find target card at drop position
               const elements = document.elementsFromPoint(touchEnd.x, touchEnd.y);
               const targetElement = elements.find(el =>
@@ -799,9 +826,14 @@
                   const [draggedCard] = newHand.splice(draggedIndex, 1);
                   newHand.splice(targetIndex, 0, draggedCard);
                   socket.emit('reorderHand', newHand.map(c => c.id));
+
+                  // Haptic feedback on successful reorder (if supported)
+                  if (navigator.vibrate) {
+                    navigator.vibrate(50);
+                  }
                 }
               }
-            } else if (distance < 30 && deltaTime < 300) {
+            } else if (distance < 15 && deltaTime < 300) {
               // Short tap - toggle selection or handle as tap
               handleDoubleTap(cardId);
             }
@@ -2541,7 +2573,7 @@
                         {/* Drop indicator - shows on left side of card */}
                         {dragOverCardId === card.id && draggedCardId !== card.id && (
                           <div
-                            className="absolute -left-1 top-0 bottom-0 w-1 bg-blue-500 rounded-full z-10"
+                            className="absolute -left-1 top-0 bottom-0 w-1 bg-blue-500 rounded-full z-10 drop-indicator-mobile"
                             style={{boxShadow: '0 0 8px rgba(59, 130, 246, 0.8)'}}
                           />
                         )}
