@@ -131,13 +131,38 @@
           width: 1.85rem !important;
           height: 2.65rem !important;
           padding: 0.2rem !important;
+          display: flex !important;
+          flex-direction: column !important;
+          justify-content: space-between !important;
+          align-items: center !important;
         }
 
         .card-mobile .rank-text {
           font-size: 0.6rem !important;
+          margin-bottom: 0 !important;
         }
 
         .card-mobile .suit-text {
+          font-size: 0.5rem !important;
+          position: relative !important;
+          bottom: auto !important;
+        }
+
+        /* Abbreviate WILD to W on mobile */
+        .card-mobile .absolute.bottom-1 {
+          font-size: 0.5rem !important;
+          bottom: 0.1rem !important;
+        }
+
+        .card-mobile .absolute.bottom-1::before {
+          content: 'W' !important;
+        }
+
+        .card-mobile .absolute.bottom-1 {
+          font-size: 0 !important;
+        }
+
+        .card-mobile .absolute.bottom-1::before {
           font-size: 0.5rem !important;
         }
 
