@@ -5,7 +5,8 @@ This is a version of Rummy I played as a kid with my family. Since it's rules ar
 ## Features
 
 ### Game Mechanics
-- 4 players (at least one human is required and AI opponents will fill any open spots)
+- **Multi-Room Support**: Create or join independent game rooms for simultaneous games
+- 4 players per room (at least one human is required and AI opponents will fill any open spots)
 - **AI Players**: Intelligent AI opponents (Alex-AI, Jordan-AI, Taylor-AI) automatically fill empty seats
 - 10 rounds with increasing difficulty
 - Complete buy mechanism with priority system
@@ -24,13 +25,15 @@ This is a version of Rummy I played as a kid with my family. Since it's rules ar
 - Buy countdown timer
 - How to Play guide accessible during gameplay
 - Drag-and-drop hand organization
+- Sound effects with volume controls (card actions, notifications, victory fanfare)
+- Mobile-optimized responsive design with touch support
+- Card zoom on long-press for better visibility
 
 ## Manual Setup
 1. Clone/Download repo to a local folder
 
 2. Install dependencies:
 ```bash
-cd hawaiian-rummy-server
 npm install
 ```
 
@@ -60,10 +63,12 @@ Requirements: a Linux machine to install noBGP agent )this will also be the host
 ## How to Play
 
 1. In your browser, Open http://localhost:3001 for LAN only play or https://xxxxxxxxxx.nobgp.com for remote play using noBGP
-2. Enter your name and click "Join Game"
-3. Wait for other players to join (up to 4 players total).
-4. Any player can click "Start Game" when ready. AI players will fill in any empty spots so the total number of players will always be 4.
-5. Players take turns:
+2. Enter your name
+3. **Create a new room** or **Join an existing room** by entering a room ID
+4. Share the room ID with friends so they can join your game
+5. Wait for other players to join (up to 4 players total per room)
+6. Any player can click "Start Game" when ready. AI players will fill in any empty spots so the total number of players will always be 4
+7. Players take turns:
    - Draw from deck or take discard pile
    - Create sets and runs to meet round requirements
    - Layoff cards to any player's melds
@@ -101,23 +106,27 @@ Requirements: a Linux machine to install noBGP agent )this will also be the host
 ## File Structure
 
 ```
-hawaiian-rummy-server/
-├── server.js          # Node.js server with game logic
+├── server.js          # Node.js server with game logic and multi-room support
+├── aiPlayer.js        # AI player logic
 ├── public/
-│   └── index.html     # React client
+│   └── index.html     # React client with sound effects and mobile support
 ├── package.json       # Dependencies
 └── README.md          # This file
 ```
 
 ## Testing Locally
 
-Open multiple browser windows/tabs to http://localhost:3001 to simulate multiple players.
+To test with multiple players:
+1. Open multiple browser windows/tabs to http://localhost:3001
+2. Each tab can create a new room or join the same room
+3. Multiple independent games can run simultaneously in different rooms
 
 ## Future Enhancements
 
 - Game history and statistics tracking
 - Saved games and resume functionality
+- Player reconnection after disconnect
 - Tournament mode
 - Custom game rules configuration
 - Enhanced AI difficulty levels
-- Sound effects and animations
+- Mobile app version
