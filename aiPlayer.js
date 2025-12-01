@@ -428,7 +428,7 @@ class AIPlayer {
     const usedCards = new Set();
 
     // Try to find sets first with proper sizes
-    const sets = this.findSets(hand, requirements.sets || 0);
+    const sets = this.findSetsWithSizes(hand, requirements.setSizes || []);
     let setIndex = 0;
     for (const set of sets) {
       const requiredSize = requirements.setSizes && requirements.setSizes[setIndex]
@@ -448,7 +448,7 @@ class AIPlayer {
 
     // Try to find runs with proper sizes
     const remainingCards = hand.filter(c => !usedCards.has(c.id));
-    const runs = this.findRuns(remainingCards, requirements.runs || 0);
+    const runs = this.findRunsWithSizes(remainingCards, requirements.runSizes || []);
 
     let runIndex = 0;
     for (const run of runs) {
@@ -480,9 +480,12 @@ class AIPlayer {
     return [];
   }
 
-  findSets(hand, numSetsNeeded) {
+  findSetsWithSizes(hand, setSizes) {
+    if (setSizes.length === 0) return [];
+
     const sets = [];
     const rankGroups = {};
+    const wildcards = hand.filter(c => c.isWild);
 
     // Group by rank
     for (const card of hand) {
@@ -494,42 +497,276 @@ class AIPlayer {
       rankGroups[card.rank].push(card);
     }
 
-    // Find sets of 3+
+    // Try to create sets for each required size
+    for (const requiredSize of setSizes) {
+      let foundSet = false;
+
+      // Try to find a set of the required size
+      for (const rank in rankGroups) {
+        const cards = rankGroups[rank];
+
+        // Check if we can make a set of this size
+        const naturalCards = cards.length;
+        const wildsNeeded = Math.max(0, requiredSize - naturalCards);
+
+        if (naturalCards + wildcards.length >= requiredSize && wildsNeeded <= wildcards.length) {
+          // We can make this set
+          const setCards = [...cards.slice(0, naturalCards)];
+
+          // Add wildcards if needed
+          for (let i = 0; i < wildsNeeded; i++) {
+            setCards.push(wildcards.shift());
+          }
+
+          sets.push({ cards: setCards.slice(0, requiredSize), minSize: requiredSize });
+
+          // Remove this rank from consideration
+          delete rankGroups[rank];
+          foundSet = true;
+          break;
+        }
+      }
+
+      if (!foundSet) {
+        // Couldn't find a set of this size, fail
+        return [];
+      }
+    }
+
+    return sets;
+  }
+
+  findSets(hand, numSetsNeeded) {
+    const sets = [];
+    const rankGroups = {};
+    const wildcards = hand.filter(c => c.isWild);
+
+    // Group by rank
+    for (const card of hand) {
+      if (card.isWild) continue;
+
+      if (!rankGroups[card.rank]) {
+        rankGroups[card.rank] = [];
+      }
+      rankGroups[card.rank].push(card);
+    }
+
+    // Find sets of 3+ (including using wildcards to complete sets)
     for (const rank in rankGroups) {
       const cards = rankGroups[rank];
+
+      // Natural set (3+ cards of same rank)
       if (cards.length >= 3) {
         sets.push({ cards: cards.slice(0, Math.min(cards.length, 4)), minSize: 3 });
+      }
+      // Use wildcards to complete sets (2 cards + 1 wildcard = set of 3)
+      else if (cards.length === 2 && wildcards.length > 0) {
+        const neededWilds = 3 - cards.length;
+        const availableWilds = wildcards.slice(0, neededWilds);
+        if (availableWilds.length === neededWilds) {
+          sets.push({ cards: [...cards, ...availableWilds], minSize: 3 });
+          // Mark wildcards as used
+          wildcards.splice(0, neededWilds);
+        }
       }
     }
 
     return sets.slice(0, numSetsNeeded);
   }
 
-  findRuns(hand, numRunsNeeded) {
+  findRunsWithSizes(hand, runSizes) {
+    if (runSizes.length === 0) return [];
+
     const runs = [];
     const suitGroups = {};
+    const wildcards = hand.filter(c => c.isWild);
 
-    // Group by suit
+    // Group by suit (exclude wildcards, we'll use them to fill gaps)
     for (const card of hand) {
+      if (card.isWild) continue;
+
       if (!suitGroups[card.suit]) {
         suitGroups[card.suit] = [];
       }
       suitGroups[card.suit].push(card);
     }
 
-    // Find runs in each suit
+    // Try to create runs for each required size
+    for (const requiredSize of runSizes) {
+      let foundRun = false;
+
+      // Try each suit to find a run of the required size
+      for (const suit in suitGroups) {
+        const cards = suitGroups[suit].sort((a, b) =>
+          this.getCardValue(a) - this.getCardValue(b)
+        );
+
+        const run = this.findRunOfSizeWithWilds(cards, wildcards, requiredSize);
+        if (run.length >= requiredSize) {
+          runs.push({ cards: run.slice(0, requiredSize), minSize: requiredSize });
+
+          // Remove used cards from the suit group
+          for (const usedCard of run) {
+            if (!usedCard.isWild) {
+              const index = suitGroups[suit].findIndex(c => c.id === usedCard.id);
+              if (index >= 0) {
+                suitGroups[suit].splice(index, 1);
+              }
+            }
+          }
+
+          // Remove used wildcards
+          const wildsUsed = run.filter(c => c.isWild);
+          for (const wild of wildsUsed) {
+            const index = wildcards.findIndex(c => c.id === wild.id);
+            if (index >= 0) {
+              wildcards.splice(index, 1);
+            }
+          }
+
+          foundRun = true;
+          break;
+        }
+      }
+
+      if (!foundRun) {
+        // Couldn't find a run of this size, fail
+        return [];
+      }
+    }
+
+    return runs;
+  }
+
+  findRuns(hand, numRunsNeeded) {
+    const runs = [];
+    const suitGroups = {};
+    const wildcards = hand.filter(c => c.isWild);
+
+    // Group by suit (exclude wildcards, we'll use them to fill gaps)
+    for (const card of hand) {
+      if (card.isWild) continue;
+
+      if (!suitGroups[card.suit]) {
+        suitGroups[card.suit] = [];
+      }
+      suitGroups[card.suit].push(card);
+    }
+
+    // Find runs in each suit, using wildcards to fill gaps
     for (const suit in suitGroups) {
       const cards = suitGroups[suit].sort((a, b) =>
         this.getCardValue(a) - this.getCardValue(b)
       );
 
-      const run = this.findLongestRun(cards);
+      const run = this.findLongestRunWithWilds(cards, [...wildcards]);
       if (run.length >= 4) {
         runs.push({ cards: run, minSize: 4 });
+        // Remove used wildcards from available pool
+        const wildsUsed = run.filter(c => c.isWild).length;
+        wildcards.splice(0, wildsUsed);
       }
     }
 
     return runs.slice(0, numRunsNeeded);
+  }
+
+  findRunOfSizeWithWilds(cards, availableWilds, targetSize) {
+    if (cards.length === 0 && availableWilds.length < targetSize) return [];
+
+    let bestRun = [];
+
+    // Try building runs starting from each card
+    for (let startIdx = 0; startIdx < cards.length; startIdx++) {
+      const run = [];
+      const wildsUsed = [];
+      let expectedValue = this.getCardValue(cards[startIdx]);
+
+      run.push(cards[startIdx]);
+
+      // Try to extend the run forward
+      for (let i = startIdx + 1; i < cards.length; i++) {
+        const cardValue = this.getCardValue(cards[i]);
+        expectedValue++;
+
+        // Check if we need wildcards to fill gaps
+        while (cardValue > expectedValue && wildsUsed.length < availableWilds.length) {
+          // Use a wildcard to fill the gap
+          wildsUsed.push(availableWilds[wildsUsed.length]);
+          run.push(availableWilds[wildsUsed.length - 1]);
+          expectedValue++;
+        }
+
+        if (cardValue === expectedValue) {
+          run.push(cards[i]);
+        } else if (cardValue > expectedValue) {
+          // Gap too large, can't continue this run
+          break;
+        } else {
+          // Duplicate value, skip it
+          continue;
+        }
+      }
+
+      // If we found a run that meets the target size, return it
+      if (run.length >= targetSize) {
+        return run.slice(0, targetSize);
+      }
+
+      // Keep track of the best run found so far
+      if (run.length > bestRun.length) {
+        bestRun = run;
+      }
+    }
+
+    // If we couldn't find a run of the target size, return empty
+    return bestRun.length >= targetSize ? bestRun : [];
+  }
+
+  findLongestRunWithWilds(cards, availableWilds) {
+    if (cards.length === 0) return [];
+
+    let longestRun = [];
+
+    // Try building runs starting from each card
+    for (let startIdx = 0; startIdx < cards.length; startIdx++) {
+      const run = [];
+      const wildsUsed = [];
+      let expectedValue = this.getCardValue(cards[startIdx]);
+
+      run.push(cards[startIdx]);
+
+      // Try to extend the run forward
+      for (let i = startIdx + 1; i < cards.length; i++) {
+        const cardValue = this.getCardValue(cards[i]);
+        expectedValue++;
+
+        // Check if we need wildcards to fill gaps
+        while (cardValue > expectedValue && wildsUsed.length < availableWilds.length) {
+          // Use a wildcard to fill the gap
+          wildsUsed.push(availableWilds[wildsUsed.length]);
+          run.push(availableWilds[wildsUsed.length - 1]);
+          expectedValue++;
+        }
+
+        if (cardValue === expectedValue) {
+          run.push(cards[i]);
+        } else if (cardValue > expectedValue) {
+          // Gap too large, can't continue this run
+          break;
+        } else {
+          // Duplicate value, skip it
+          continue;
+        }
+      }
+
+      // Keep track of the longest run found
+      if (run.length > longestRun.length) {
+        longestRun = run;
+      }
+    }
+
+    return longestRun.length >= 4 ? longestRun : [];
   }
 
   findLongestRun(cards) {
