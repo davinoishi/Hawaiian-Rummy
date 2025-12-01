@@ -16,37 +16,56 @@ const io = socketIo(server, {
   }
 });
 
-// Game state
-let gameState = {
-  players: [],
-  gameStarted: false,
-  currentPlayerIndex: 0,
-  currentRound: 0,
-  deck: [],
-  discardPile: [],
-  playerHands: {},
-  playerMelds: {},
-  playerScores: {},
-  roundScores: {}, // Track score per round per player: {playerId: [round1Score, round2Score, ...]}
-  gamePhase: 'lobby', // lobby, turnOrder, draw, meld, discard, roundSummary
-  turnOrderDraws: [], // Array of {playerId, card, value} for turn order determination
-  hasMetRequirements: {},
-  buyRequests: [], // Array of {playerId, timestamp}
-  maxBuysPerRound: {},
-  buyCount: {},
-  lastDiscarder: null,
-  roundsWon: {},
-  passedBuy: [],
-  buyJustProcessed: false, // Flag to prevent current player from taking discard after buy
-  continueClicked: [] // Track which players have clicked continue
-};
+// Game rooms - Map of roomId -> gameState
+const games = new Map();
+
+// AI Players tracking per room - Map of roomId -> array of AI players
+const aiPlayers = new Map();
 
 const suits = ['♠', '♥', '♦', '♣'];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
-// AI Players tracking
-let aiPlayers = [];
 const AI_NAMES = ['Alex-AI', 'Jordan-AI', 'Taylor-AI'];
+
+// Helper function to create a new game state
+function createGameState() {
+  return {
+    players: [],
+    gameStarted: false,
+    currentPlayerIndex: 0,
+    currentRound: 0,
+    deck: [],
+    discardPile: [],
+    playerHands: {},
+    playerMelds: {},
+    playerScores: {},
+    roundScores: {},
+    gamePhase: 'lobby',
+    turnOrderDraws: [],
+    hasMetRequirements: {},
+    buyRequests: [],
+    maxBuysPerRound: {},
+    buyCount: {},
+    lastDiscarder: null,
+    roundsWon: {},
+    passedBuy: [],
+    buyJustProcessed: false,
+    continueClicked: []
+  };
+}
+
+// Helper function to generate unique room ID
+function generateRoomId() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+// Helper function to get or create a room
+function getOrCreateRoom(roomId) {
+  if (!games.has(roomId)) {
+    games.set(roomId, createGameState());
+    aiPlayers.set(roomId, []);
+  }
+  return games.get(roomId);
+}
 
 const roundRequirements = [
   { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], totalCards: 6, maxBuys: 3, description: "2 sets of 3" },
@@ -91,7 +110,10 @@ function shuffleDeck(deck) {
 }
 
 // AI Player Management
-function spawnAIPlayers() {
+function spawnAIPlayers(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   const currentPlayerCount = gameState.players.length;
   const aiNeeded = 4 - currentPlayerCount;
 
@@ -99,30 +121,38 @@ function spawnAIPlayers() {
     return;
   }
 
-  console.log(`Spawning ${aiNeeded} AI player(s) to fill lobby...`);
+  console.log(`[Room ${roomId}] Spawning ${aiNeeded} AI player(s) to fill lobby...`);
+
+  const roomAIPlayers = aiPlayers.get(roomId) || [];
 
   for (let i = 0; i < aiNeeded && i < AI_NAMES.length; i++) {
     const aiName = AI_NAMES[i];
-    const ai = new AIPlayer('http://localhost:3001', aiName);
+    const ai = new AIPlayer('http://localhost:3001', aiName, roomId);
     ai.connect();
-    aiPlayers.push(ai);
-    console.log(`${aiName} spawned`);
+    roomAIPlayers.push(ai);
+    console.log(`[Room ${roomId}] ${aiName} spawned`);
   }
+
+  aiPlayers.set(roomId, roomAIPlayers);
 }
 
-function removeAllAIPlayers() {
-  console.log('Removing all AI players...');
-  aiPlayers.forEach(ai => {
+function removeAllAIPlayers(roomId) {
+  console.log(`[Room ${roomId}] Removing all AI players...`);
+  const roomAIPlayers = aiPlayers.get(roomId) || [];
+  roomAIPlayers.forEach(ai => {
     try {
       ai.disconnect();
     } catch (error) {
       console.error('Error disconnecting AI:', error);
     }
   });
-  aiPlayers = [];
+  aiPlayers.set(roomId, []);
 }
 
-function startNewRound() {
+function startNewRound(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   const deck = createDeck();
   gameState.deck = deck;
   gameState.discardPile = [];
@@ -132,7 +162,7 @@ function startNewRound() {
   gameState.buyCount = {};
   gameState.lastDiscarder = null;
   gameState.passedBuy = [];
-  
+
   // Deal cards to each player
   gameState.players.forEach(playerId => {
     gameState.playerHands[playerId] = gameState.deck.splice(0, 9);
@@ -140,15 +170,18 @@ function startNewRound() {
     gameState.hasMetRequirements[playerId] = false;
     gameState.buyCount[playerId] = 0;
   });
-  
+
   // First discard
   gameState.discardPile.push(gameState.deck.shift());
   gameState.gamePhase = 'draw';
 }
 
 // Determine starting player order by random selection
-async function determineTurnOrder() {
-  console.log('Starting turn order determination... Connected clients:', io.sockets.sockets.size);
+async function determineTurnOrder(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
+  console.log(`[Room ${roomId}] Starting turn order determination...`);
   gameState.gamePhase = 'turnOrder';
 
   // Start with all players in a pool
@@ -156,7 +189,7 @@ async function determineTurnOrder() {
   const selectedOrder = [];
 
   // Send initial state - all positions empty
-  io.emit('turnOrderUpdate', {
+  io.to(roomId).emit('turnOrderUpdate', {
     phase: 'selecting',
     position: 0,
     selectedOrder: [],
@@ -179,10 +212,10 @@ async function determineTurnOrder() {
     remainingPlayers.splice(randomIndex, 1);
     selectedOrder.push(selectedPlayerId);
 
-    console.log(`Position ${position}: ${selectedName}`);
+    console.log(`[Room ${roomId}] Position ${position}: ${selectedName}`);
 
     // Send update showing this selection
-    io.emit('turnOrderUpdate', {
+    io.to(roomId).emit('turnOrderUpdate', {
       phase: 'selecting',
       position: position,
       justSelected: selectedPlayerId,
@@ -206,7 +239,7 @@ async function determineTurnOrder() {
   gameState.currentPlayerIndex = 0;
 
   // Send final result
-  io.emit('turnOrderUpdate', {
+  io.to(roomId).emit('turnOrderUpdate', {
     phase: 'final',
     selectedOrder: selectedOrder.map((id, idx) => ({
       playerId: id,
@@ -215,7 +248,7 @@ async function determineTurnOrder() {
     }))
   });
 
-  console.log('Turn order determined:', selectedOrder.map(id => {
+  console.log(`[Room ${roomId}] Turn order determined:`, selectedOrder.map(id => {
     const sock = io.sockets.sockets.get(id);
     return sock ? sock.playerName : 'Unknown';
   }));
@@ -225,16 +258,19 @@ async function determineTurnOrder() {
 
   // Countdown and start game
   for (let i = 3; i > 0; i--) {
-    io.emit('turnOrderCountdown', i);
+    io.to(roomId).emit('turnOrderCountdown', i);
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
 
   // Start the actual game
-  startGame();
-  broadcastGameState();
+  startGame(roomId);
+  broadcastGameState(roomId);
 }
 
-function startGame() {
+function startGame(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   gameState.gameStarted = true;
   gameState.currentRound = 0;
   gameState.currentPlayerIndex = 0;
@@ -246,41 +282,87 @@ function startGame() {
     gameState.roundScores[playerId] = [];
   });
 
-  startNewRound();
+  startNewRound(roomId);
 }
 
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
-  socket.on('joinGame', (playerName) => {
-    if (gameState.gameStarted) {
-      socket.emit('gameAlreadyStarted');
-      return;
-    }
+  // Create a new room
+  socket.on('createRoom', (playerName, callback) => {
+    const roomId = generateRoomId();
+    getOrCreateRoom(roomId);
 
-    if (gameState.players.length >= 4) {
-      socket.emit('gameFull');
-      return;
-    }
-
-    gameState.players.push(socket.id);
+    socket.roomId = roomId;
     socket.playerName = playerName;
     socket.playerId = socket.id;
+    socket.join(roomId);
 
-    console.log(`${playerName} joined. Players: ${gameState.players.length}`);
+    const gameState = games.get(roomId);
+    gameState.players.push(socket.id);
 
-    io.emit('lobbyUpdate', {
+    console.log(`[Room ${roomId}] ${playerName} created room. Room ID: ${roomId}`);
+
+    if (callback) {
+      callback({ roomId });
+    }
+
+    io.to(roomId).emit('lobbyUpdate', {
+      roomId,
       players: gameState.players.map(id => {
         const sock = io.sockets.sockets.get(id);
         return { id, name: sock ? sock.playerName : 'Unknown' };
       }),
       gameStarted: gameState.gameStarted
     });
+  });
 
-    // Don't spawn AI players yet - wait for Start Game to be clicked
+  // Join an existing room
+  socket.on('joinGame', ({ playerName, roomId }, callback) => {
+    const gameState = getOrCreateRoom(roomId);
+
+    if (gameState.gameStarted) {
+      socket.emit('gameAlreadyStarted');
+      if (callback) callback({ error: 'Game already started' });
+      return;
+    }
+
+    if (gameState.players.length >= 4) {
+      socket.emit('gameFull');
+      if (callback) callback({ error: 'Game is full' });
+      return;
+    }
+
+    socket.roomId = roomId;
+    socket.playerName = playerName;
+    socket.playerId = socket.id;
+    socket.join(roomId);
+
+    gameState.players.push(socket.id);
+
+    console.log(`[Room ${roomId}] ${playerName} joined. Players: ${gameState.players.length}`);
+
+    if (callback) {
+      callback({ success: true, roomId });
+    }
+
+    io.to(roomId).emit('lobbyUpdate', {
+      roomId,
+      players: gameState.players.map(id => {
+        const sock = io.sockets.sockets.get(id);
+        return { id, name: sock ? sock.playerName : 'Unknown' };
+      }),
+      gameStarted: gameState.gameStarted
+    });
   });
 
   socket.on('startGame', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     if (gameState.players.length < 1) {
       socket.emit('error', 'Need at least 1 player to start');
       return;
@@ -288,7 +370,7 @@ io.on('connection', (socket) => {
 
     // Prevent multiple start attempts
     if (gameState.gameStarted || gameState.gamePhase === 'turnOrder') {
-      console.log('Game already started or starting, ignoring duplicate start request');
+      console.log(`[Room ${roomId}] Game already started or starting, ignoring duplicate start request`);
       return;
     }
 
@@ -296,16 +378,22 @@ io.on('connection', (socket) => {
     gameState.gamePhase = 'turnOrder';
 
     // Spawn AI players to fill up to 4 players
-    spawnAIPlayers();
+    spawnAIPlayers(roomId);
 
     // Give AI players time to join, then determine turn order
     setTimeout(() => {
-      determineTurnOrder();
+      determineTurnOrder(roomId);
     }, 1000);
   });
 
   socket.on('drawCard', () => {
-    if (!isPlayerTurn(socket.id) || gameState.gamePhase !== 'draw') {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
+    if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase !== 'draw') {
       return;
     }
 
@@ -322,12 +410,18 @@ io.on('connection', (socket) => {
     // DON'T reset buyJustProcessed here - wait until turn ends with discard
     gameState.passedBuy = []; // Clear passes since we're moving on
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('requestBuy', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     // Can't buy if it's your turn
-    if (isPlayerTurn(socket.id)) {
+    if (isPlayerTurn(socket.id, roomId)) {
       return;
     }
 
@@ -378,7 +472,7 @@ io.on('connection', (socket) => {
             requestsToRemove.push(req.playerId);
             if (!gameState.passedBuy.includes(req.playerId)) {
               gameState.passedBuy.push(req.playerId);
-              console.log(`Auto-passing ${io.sockets.sockets.get(req.playerId)?.playerName || 'Unknown'} - lower priority than ${socket.playerName}`);
+              console.log(`[Room ${roomId}] Auto-passing ${io.sockets.sockets.get(req.playerId)?.playerName || 'Unknown'} - lower priority than ${socket.playerName}`);
             }
           }
         }
@@ -388,27 +482,39 @@ io.on('connection', (socket) => {
       gameState.buyRequests = gameState.buyRequests.filter(r => !requestsToRemove.includes(r.playerId));
     }
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('cancelBuy', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     gameState.buyRequests = gameState.buyRequests.filter(r => r.playerId !== socket.id);
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('passBuy', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     // Add this player to the list of players who have passed
     if (!gameState.passedBuy) {
       gameState.passedBuy = [];
     }
-    
+
     if (!gameState.passedBuy.includes(socket.id)) {
       gameState.passedBuy.push(socket.id);
     }
-    
+
     // Check if all players between current and first buyer have passed
     const currentPlayerIndex = gameState.currentPlayerIndex;
-    
+
     // Find the first buyer (closest after current player)
     let firstBuyerDistance = Infinity;
     let firstBuyer = null;
@@ -420,13 +526,13 @@ io.on('connection', (socket) => {
         firstBuyer = req.playerId;
       }
     });
-    
+
     if (!firstBuyer) {
       gameState.passedBuy = [];
-      broadcastGameState();
+      broadcastGameState(roomId);
       return;
     }
-    
+
     // Check if all players from current to buyer (including current) have passed
     let allPassed = true;
     for (let i = 0; i < firstBuyerDistance; i++) {
@@ -437,18 +543,24 @@ io.on('connection', (socket) => {
         break;
       }
     }
-    
+
     // If all have passed, process the buy
     if (allPassed) {
-      processBuyRequests();
+      processBuyRequests(roomId);
       gameState.passedBuy = [];
     }
-    
-    broadcastGameState();
+
+    broadcastGameState(roomId);
   });
 
   socket.on('takeDiscard', () => {
-    if (!isPlayerTurn(socket.id) || gameState.gamePhase !== 'draw') {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
+    if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase !== 'draw') {
       return;
     }
 
@@ -466,17 +578,23 @@ io.on('connection', (socket) => {
     gameState.buyRequests = [];
     gameState.passedBuy = [];
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
-  socket.on('createMeld', ({ type, cardIds }) => {
-    if (!isPlayerTurn(socket.id) || gameState.gamePhase === 'draw') {
+  socket.on('createMeld', ({ type, cardIds, wildcardPlacement }) => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
+    if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase === 'draw') {
       return;
     }
 
     const hand = gameState.playerHands[socket.id];
     const cards = hand.filter(c => cardIds.includes(c.id));
-    
+
     // Validate meld
     const isValid = type === 'set' ? validateSet(cards) : validateRun(cards);
     if (!isValid) {
@@ -488,54 +606,75 @@ io.on('connection', (socket) => {
     const req = roundRequirements[gameState.currentRound];
     const currentSets = gameState.playerMelds[socket.id].filter(m => m.type === 'set').length;
     const currentRuns = gameState.playerMelds[socket.id].filter(m => m.type === 'run').length;
-    
+
     if (type === 'set' && currentSets >= req.sets) {
       socket.emit('error', `Round ${gameState.currentRound + 1} only requires ${req.sets} set(s)`);
       return;
     }
-    
+
     if (type === 'run' && currentRuns >= req.runs) {
       socket.emit('error', `Round ${gameState.currentRound + 1} only requires ${req.runs} run(s)`);
       return;
     }
 
-    // Sort run cards
-    const sortedCards = type === 'run' ? sortRunCards(cards) : cards;
-    
+    // Check if run needs wildcard position choice
+    if (type === 'run' && !wildcardPlacement && needsWildcardPositionChoice(cards)) {
+      socket.emit('needMeldWildcardPosition', {
+        cardIds,
+        type
+      });
+      return;
+    }
+
+    // Sort run cards with wildcard placement
+    const sortedCards = type === 'run' ? sortRunCards(cards, wildcardPlacement) : cards;
+
     gameState.playerMelds[socket.id].push({ type, cards: sortedCards });
     gameState.playerHands[socket.id] = hand.filter(c => !cardIds.includes(c.id));
 
     // Check if requirements met
-    if (checkMeldsMatchRequirements(socket.id)) {
+    if (checkMeldsMatchRequirements(socket.id, roomId)) {
       gameState.hasMetRequirements[socket.id] = true;
     }
 
     // Check if player won by melding all cards
     if (gameState.playerHands[socket.id].length === 0 && gameState.hasMetRequirements[socket.id]) {
-      endRound(socket.id);
+      endRound(socket.id, roomId);
       return;
     }
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('cancelMelds', () => {
-    if (!isPlayerTurn(socket.id) || gameState.gamePhase === 'draw') {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
+    if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase === 'draw') {
       return;
     }
 
     // Return all melded cards to hand
     const myMelds = gameState.playerMelds[socket.id] || [];
     const cardsToReturn = myMelds.flatMap(meld => meld.cards);
-    
+
     gameState.playerHands[socket.id] = [...gameState.playerHands[socket.id], ...cardsToReturn];
     gameState.playerMelds[socket.id] = [];
     gameState.hasMetRequirements[socket.id] = false;
-    
-    broadcastGameState();
+
+    broadcastGameState(roomId);
   });
 
   socket.on('layoffCard', ({ cardId, meldOwnerId, meldIndex, wildcardToReplace, wildcardNewPosition, wildcardPosition }) => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     if (!gameState.hasMetRequirements[socket.id]) {
       socket.emit('error', 'Must meet requirements first');
       return;
@@ -586,10 +725,10 @@ io.on('connection', (socket) => {
 
       // Check if player won by laying off all cards
       if (gameState.playerHands[socket.id].length === 0) {
-        endRound(socket.id);
+        endRound(socket.id, roomId);
       }
 
-      broadcastGameState();
+      broadcastGameState(roomId);
       return;
     }
 
@@ -638,10 +777,10 @@ io.on('connection', (socket) => {
       gameState.playerHands[socket.id] = hand.filter(c => c.id !== cardId);
 
       if (gameState.playerHands[socket.id].length === 0) {
-        endRound(socket.id);
+        endRound(socket.id, roomId);
       }
 
-      broadcastGameState();
+      broadcastGameState(roomId);
       return;
     }
 
@@ -654,65 +793,89 @@ io.on('connection', (socket) => {
 
     // Check if player won by laying off all cards
     if (gameState.playerHands[socket.id].length === 0) {
-      endRound(socket.id);
+      endRound(socket.id, roomId);
     }
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('discard', (cardId) => {
-    if (!isPlayerTurn(socket.id) || gameState.gamePhase === 'draw') {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
+    if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase === 'draw') {
       return;
     }
 
     const hand = gameState.playerHands[socket.id];
     const card = hand.find(c => c.id === cardId);
-    
+
     if (!card) {
       socket.emit('error', 'Invalid card to discard');
       return;
     }
-    
+
     // If player has melds but hasn't met requirements, don't allow discard
-    if (gameState.playerMelds[socket.id] && gameState.playerMelds[socket.id].length > 0 
+    if (gameState.playerMelds[socket.id] && gameState.playerMelds[socket.id].length > 0
         && !gameState.hasMetRequirements[socket.id]) {
-      const meetsReqs = checkMeldsMatchRequirements(socket.id);
+      const meetsReqs = checkMeldsMatchRequirements(socket.id, roomId);
       if (!meetsReqs) {
         socket.emit('error', 'Meld requirements not met. Complete your melds or cancel them before discarding.');
         return;
       }
     }
-    
+
     gameState.discardPile.push(card);
     gameState.playerHands[socket.id] = hand.filter(c => c.id !== cardId);
     gameState.lastDiscarder = socket.id;
-    
+
     // Check if round is over (discarded last card)
-    if (gameState.playerHands[socket.id].length === 0 && 
-        checkMeldsMatchRequirements(socket.id)) {
-      endRound(socket.id);
+    if (gameState.playerHands[socket.id].length === 0 &&
+        checkMeldsMatchRequirements(socket.id, roomId)) {
+      endRound(socket.id, roomId);
     } else {
-      nextTurn();
+      nextTurn(roomId);
     }
-    
-    broadcastGameState();
+
+    broadcastGameState(roomId);
   });
 
   socket.on('reorderHand', (cardIds) => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     const hand = gameState.playerHands[socket.id];
     const reordered = cardIds.map(id => hand.find(c => c.id === id)).filter(c => c);
     gameState.playerHands[socket.id] = reordered;
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('newGame', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     if (gameState.gamePhase === 'gameOver') {
-      startGame();
-      broadcastGameState();
+      startGame(roomId);
+      broadcastGameState(roomId);
     }
   });
 
   socket.on('continueToNextRound', () => {
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     if (gameState.gamePhase !== 'roundSummary') {
       return;
     }
@@ -726,21 +889,28 @@ io.on('connection', (socket) => {
     if (gameState.continueClicked.length === gameState.players.length) {
       // All players ready, start next round
       gameState.currentRound++;
-      startNewRound();
+      startNewRound(roomId);
     }
 
-    broadcastGameState();
+    broadcastGameState(roomId);
   });
 
   socket.on('disconnect', () => {
     console.log('Client disconnected:', socket.id);
+    const roomId = socket.roomId;
+    if (!roomId) return;
+
+    const gameState = games.get(roomId);
+    if (!gameState) return;
+
     gameState.players = gameState.players.filter(id => id !== socket.id);
-    
+
     if (gameState.gameStarted && gameState.players.length === 0) {
-      resetGame();
+      resetGame(roomId);
     }
-    
-    io.emit('lobbyUpdate', {
+
+    io.to(roomId).emit('lobbyUpdate', {
+      roomId,
       players: gameState.players.map(id => {
         const sock = io.sockets.sockets.get(id);
         return { id, name: sock ? sock.playerName : 'Unknown' };
@@ -750,11 +920,16 @@ io.on('connection', (socket) => {
   });
 });
 
-function isPlayerTurn(playerId) {
+function isPlayerTurn(playerId, roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return false;
   return gameState.players[gameState.currentPlayerIndex] === playerId;
 }
 
-function nextTurn() {
+function nextTurn(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
   gameState.gamePhase = 'draw';
   gameState.buyRequests = []; // Clear buy requests for new turn
@@ -762,7 +937,10 @@ function nextTurn() {
   gameState.buyJustProcessed = false; // Reset buy flag for new turn
 }
 
-function endRound(winnerId) {
+function endRound(winnerId, roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   // Calculate scores for this round
   gameState.players.forEach(playerId => {
     const hand = gameState.playerHands[playerId];
@@ -786,10 +964,10 @@ function endRound(winnerId) {
   if (gameState.currentRound < 9) {
     // Show round summary
     gameState.gamePhase = 'roundSummary';
-    broadcastGameState();
+    broadcastGameState(roomId);
   } else {
     gameState.gamePhase = 'gameOver';
-    broadcastGameState();
+    broadcastGameState(roomId);
   }
 }
 
@@ -801,41 +979,27 @@ function getCardPoints(card) {
   return 5;
 }
 
-function resetGame() {
+function resetGame(roomId) {
   // Remove all AI players when resetting
-  removeAllAIPlayers();
+  removeAllAIPlayers(roomId);
 
-  gameState = {
-    players: [],
-    gameStarted: false,
-    currentPlayerIndex: 0,
-    currentRound: 0,
-    deck: [],
-    discardPile: [],
-    playerHands: {},
-    playerMelds: {},
-    playerScores: {},
-    roundScores: {},
-    gamePhase: 'lobby',
-    hasMetRequirements: {},
-    buyRequests: [],
-    maxBuysPerRound: {},
-    buyCount: {},
-    lastDiscarder: null,
-    roundsWon: {},
-    passedBuy: [],
-    buyJustProcessed: false,
-    continueClicked: []
-  };
+  // Reset the game state for this room
+  games.set(roomId, createGameState());
 }
 
-function getNextPlayerInOrder(currentPlayerId) {
+function getNextPlayerInOrder(currentPlayerId, roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return null;
+
   const currentIndex = gameState.players.indexOf(currentPlayerId);
   const nextIndex = (currentIndex + 1) % gameState.players.length;
   return gameState.players[nextIndex];
 }
 
-function processBuyRequests() {
+function processBuyRequests(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   if (gameState.buyRequests.length === 0) return;
 
   // Sort buy requests by player order (next player after current has priority)
@@ -843,11 +1007,11 @@ function processBuyRequests() {
   const sortedRequests = [...gameState.buyRequests].sort((a, b) => {
     const aIndex = gameState.players.indexOf(a.playerId);
     const bIndex = gameState.players.indexOf(b.playerId);
-    
+
     // Calculate distance from current player
     const aDistance = (aIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
     const bDistance = (bIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
-    
+
     return aDistance - bDistance;
   });
 
@@ -865,9 +1029,12 @@ function processBuyRequests() {
   gameState.buyJustProcessed = true;
 }
 
-function broadcastGameState() {
+function broadcastGameState(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return;
+
   const maxBuys = roundRequirements[gameState.currentRound] ? roundRequirements[gameState.currentRound].maxBuys : 3;
-  
+
   // Calculate winner if game is over
   let winner = null;
   if (gameState.gamePhase === 'gameOver') {
@@ -878,16 +1045,16 @@ function broadcastGameState() {
       return lowest;
     }, null);
   }
-  
+
   gameState.players.forEach(playerId => {
     const socket = io.sockets.sockets.get(playerId);
     if (socket) {
       const currentPlayerIndex = gameState.currentPlayerIndex;
       const thisPlayerIndex = gameState.players.indexOf(playerId);
-      
+
       // Calculate distance from current player (positive = after, 0 = current)
       let distance = (thisPlayerIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
-      
+
       // Find the next player who has requested a buy (closest after current player)
       let nextBuyerDistance = Infinity;
       let nextBuyer = null;
@@ -899,13 +1066,13 @@ function broadcastGameState() {
           nextBuyer = req.playerId;
         }
       });
-      
+
       // Current player can draw ONLY if there are no pending buy requests
       // If there are buy requests, they must take discard or pass
-      const canDraw = isPlayerTurn(playerId) &&
+      const canDraw = isPlayerTurn(playerId, roomId) &&
                       gameState.gamePhase === 'draw' &&
                       (!gameState.buyRequests || gameState.buyRequests.length === 0);
-      
+
       // Player can buy if:
       // 1. Not their turn
       // 2. Haven't exceeded max buys
@@ -913,14 +1080,14 @@ function broadcastGameState() {
       // 4. There's actually a card in the discard pile
       // 5. No one with higher priority (closer to current) has requested
       // 6. A buy wasn't just processed (wait for current player to discard a new card)
-      const canBuy = !isPlayerTurn(playerId) &&
+      const canBuy = !isPlayerTurn(playerId, roomId) &&
                      gameState.gamePhase === 'draw' &&
                      gameState.buyCount[playerId] < maxBuys &&
                      (gameState.lastDiscarder === null || gameState.lastDiscarder !== playerId) &&
                      gameState.discardPile.length > 0 &&
                      distance > 0 &&
                      !gameState.buyJustProcessed;
-      
+
       // Player should see pass button if:
       // 1. Someone wants to buy
       // 2. This player is current player OR between current and the buyer
@@ -928,16 +1095,16 @@ function broadcastGameState() {
       // NOTE: shouldShowPass and canBuy can BOTH be true - player can buy OR pass
       const shouldShowPass = gameState.buyRequests.length > 0 &&
                             !gameState.buyRequests.some(r => r.playerId === playerId) &&
-                            (isPlayerTurn(playerId) ||
+                            (isPlayerTurn(playerId, roomId) ||
                              (distance > 0 && gameState.buyRequests.some(req => {
                                const reqIndex = gameState.players.indexOf(req.playerId);
                                const reqDistance = (reqIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
                                return reqDistance > distance;
                              })));
-      
+
       // Current player can take discard if it's their turn AND no buy just processed
-      const canTakeDiscard = isPlayerTurn(playerId) && gameState.gamePhase === 'draw' && !gameState.buyJustProcessed;
-      
+      const canTakeDiscard = isPlayerTurn(playerId, roomId) && gameState.gamePhase === 'draw' && !gameState.buyJustProcessed;
+
       socket.emit('gameState', {
         players: gameState.players.map(id => {
           const sock = io.sockets.sockets.get(id);
@@ -960,7 +1127,7 @@ function broadcastGameState() {
         currentPlayerIndex: gameState.currentPlayerIndex,
         currentRound: gameState.currentRound,
         gamePhase: gameState.gamePhase,
-        isMyTurn: isPlayerTurn(playerId),
+        isMyTurn: isPlayerTurn(playerId, roomId),
         hasMetRequirements: gameState.hasMetRequirements[playerId] || false,
         buyRequests: gameState.buyRequests,
         myBuyCount: gameState.buyCount[playerId] || 0,
@@ -1056,20 +1223,21 @@ function validateRun(cards) {
   return false;
 }
 
-function sortRunCards(cards) {
+function sortRunCards(cards, wildcardPlacement = null) {
   const nonWildCards = cards.filter(c => !c.isWild);
   const wildCards = cards.filter(c => c.isWild);
-  
+
   if (nonWildCards.length === 0) return cards;
-  
+
   const ranks = nonWildCards.map(c => c.rank);
   const hasKing = ranks.includes('K');
   const hasQueen = ranks.includes('Q');
+  const hasAce = ranks.includes('A');
   const hasTwo = ranks.includes('2');
   const hasThree = ranks.includes('3');
-  
+
   const aceHigh = (hasKing || hasQueen) && !hasTwo && !hasThree;
-  
+
   const sorted = [...nonWildCards].sort((a, b) => {
     let aVal = getRankValue(a.rank);
     let bVal = getRankValue(b.rank);
@@ -1079,36 +1247,73 @@ function sortRunCards(cards) {
     }
     return aVal - bVal;
   });
-  
+
   const result = [];
   const usedWilds = [];
-  
+
+  // Fill gaps between non-wild cards first
   for (let i = 0; i < sorted.length; i++) {
     if (i > 0) {
       let prevVal = getRankValue(sorted[i-1].rank);
       let currVal = getRankValue(sorted[i].rank);
-      
+
       if (aceHigh) {
         if (sorted[i-1].rank === 'A') prevVal = 14;
         if (sorted[i].rank === 'A') currVal = 14;
       }
-      
+
       const gap = currVal - prevVal - 1;
       for (let j = 0; j < gap && usedWilds.length < wildCards.length; j++) {
         result.push(wildCards[usedWilds.length]);
         usedWilds.push(wildCards[usedWilds.length]);
       }
     }
-    
+
     result.push(sorted[i]);
   }
-  
-  while (usedWilds.length < wildCards.length) {
-    result.push(wildCards[usedWilds.length]);
-    usedWilds.push(wildCards[usedWilds.length]);
+
+  // Determine where to place remaining wildcards
+  let placeAtBeginning = false;
+
+  if (wildcardPlacement === 'beginning') {
+    placeAtBeginning = true;
+  } else if (wildcardPlacement === 'end') {
+    placeAtBeginning = false;
+  } else {
+    // Auto-determine based on run position
+    // Get the actual values in the sorted run
+    let lowestVal = getRankValue(sorted[0].rank);
+    let highestVal = getRankValue(sorted[sorted.length - 1].rank);
+
+    if (aceHigh) {
+      if (sorted[0].rank === 'A') lowestVal = 14;
+      if (sorted[sorted.length - 1].rank === 'A') highestVal = 14;
+    }
+
+    // Check if run is at the top (can't extend higher)
+    const atTop = highestVal === 14 || (aceHigh && hasAce);
+    // Check if run is at the bottom (can't extend lower)
+    const atBottom = lowestVal === 1 || (!aceHigh && hasAce) || lowestVal === 3;
+
+    if (atTop && !atBottom) {
+      // Run is at top, wildcards go at beginning
+      placeAtBeginning = true;
+    } else if (atBottom && !atTop) {
+      // Run is at bottom, wildcards go at end
+      placeAtBeginning = false;
+    } else {
+      // Default: place at end (but player should have been asked)
+      placeAtBeginning = false;
+    }
   }
-  
-  return result;
+
+  // Place remaining wildcards
+  const remainingWilds = wildCards.slice(usedWilds.length);
+  if (placeAtBeginning) {
+    return [...remainingWilds, ...result];
+  } else {
+    return [...result, ...remainingWilds];
+  }
 }
 
 function canCardFitMeld(card, meld) {
@@ -1149,22 +1354,85 @@ function getValidWildcardPositions(wildcard, meld) {
   return validPositions;
 }
 
-function checkMeldsMatchRequirements(playerId) {
+// Check if a run needs wildcard position choice when melding
+function needsWildcardPositionChoice(cards) {
+  const nonWildCards = cards.filter(c => !c.isWild);
+  const wildCards = cards.filter(c => c.isWild);
+
+  if (wildCards.length === 0 || nonWildCards.length === 0) return false;
+
+  const ranks = nonWildCards.map(c => c.rank);
+  const hasKing = ranks.includes('K');
+  const hasQueen = ranks.includes('Q');
+  const hasAce = ranks.includes('A');
+  const hasTwo = ranks.includes('2');
+  const hasThree = ranks.includes('3');
+
+  const aceHigh = (hasKing || hasQueen) && !hasTwo && !hasThree;
+
+  // Sort to find the range
+  const sorted = [...nonWildCards].sort((a, b) => {
+    let aVal = getRankValue(a.rank);
+    let bVal = getRankValue(b.rank);
+    if (aceHigh) {
+      if (a.rank === 'A') aVal = 14;
+      if (b.rank === 'A') bVal = 14;
+    }
+    return aVal - bVal;
+  });
+
+  // Count wildcards not used for gaps
+  let gapWilds = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    let prevVal = getRankValue(sorted[i-1].rank);
+    let currVal = getRankValue(sorted[i].rank);
+    if (aceHigh) {
+      if (sorted[i-1].rank === 'A') prevVal = 14;
+      if (sorted[i].rank === 'A') currVal = 14;
+    }
+    gapWilds += currVal - prevVal - 1;
+  }
+
+  const remainingWilds = wildCards.length - gapWilds;
+  if (remainingWilds <= 0) return false;
+
+  // Check if run is at the edges
+  let lowestVal = getRankValue(sorted[0].rank);
+  let highestVal = getRankValue(sorted[sorted.length - 1].rank);
+  if (aceHigh) {
+    if (sorted[0].rank === 'A') lowestVal = 14;
+    if (sorted[sorted.length - 1].rank === 'A') highestVal = 14;
+  }
+
+  const atTop = highestVal === 14 || (aceHigh && hasAce);
+  const atBottom = lowestVal === 1 || (!aceHigh && hasAce) || lowestVal === 3;
+
+  // Can extend in both directions
+  const canExtendLow = !atBottom && lowestVal - remainingWilds >= 1;
+  const canExtendHigh = !atTop && highestVal + remainingWilds <= 14;
+
+  return canExtendLow && canExtendHigh;
+}
+
+function checkMeldsMatchRequirements(playerId, roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState) return false;
+
   const req = roundRequirements[gameState.currentRound];
   const melds = gameState.playerMelds[playerId];
   const sets = melds.filter(m => m.type === 'set');
   const runs = melds.filter(m => m.type === 'run');
-  
+
   if (sets.length !== req.sets || runs.length !== req.runs) return false;
-  
+
   for (let i = 0; i < req.setSizes.length; i++) {
     if (!sets[i] || sets[i].cards.length < req.setSizes[i]) return false;
   }
-  
+
   for (let i = 0; i < req.runSizes.length; i++) {
     if (!runs[i] || runs[i].cards.length < req.runSizes[i]) return false;
   }
-  
+
   return true;
 }
 

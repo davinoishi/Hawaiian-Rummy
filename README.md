@@ -1,4 +1,4 @@
-# Hawaiian Rummy - Multiplayer Card Game (supports up to 4 players)
+# Hawaiian Rummy - Multiplayer Card Game
 
 This is a version of Rummy I played as a kid with my family. Since it's rules are unique, I had to build the game from scratch. This is completely vibe coded with Claude Code. It's a simple web app. The instructions to install manually or via noBGP piGPT or noBGP MCP are below.
 
@@ -52,7 +52,7 @@ Requirements: a Linux machine to install noBGP agent )this will also be the host
    - Run the command on your device. This will install the noBGP agent and register your device.
 2. Ask you LLM to install this project on your device
    - "Install https://github.com/davinoishi/Hawaiian-Rummy on my (Raspberry Pi)
-3. Ask you LLM to create a public URL to share the game
+3. Ask you rLLM to create a public URL to share the game
    - "Create a public URL to share the game"
    - This will create a proxy URL in the format https://xxxxxxxxxx.nobgp.com that will redirect users to proper host and port. There is no need for any other networking steps such as port forwarding.
 4. Share the URL with all your friends to enjoy the game.

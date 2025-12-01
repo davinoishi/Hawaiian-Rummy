@@ -1,9 +1,10 @@
 const io = require('socket.io-client');
 
 class AIPlayer {
-  constructor(serverUrl, playerName) {
+  constructor(serverUrl, playerName, roomId) {
     this.serverUrl = serverUrl;
     this.playerName = playerName;
+    this.roomId = roomId;
     this.socket = null;
     this.gameState = null;
     this.decisionDelay = 3000; // 3 second delay to give human players time to request buys
@@ -16,7 +17,7 @@ class AIPlayer {
     this.socket = io(this.serverUrl);
 
     this.socket.on('connect', () => {
-      console.log(`${this.playerName} connected with ID: ${this.socket.id}`);
+      console.log(`${this.playerName} connected with ID: ${this.socket.id} for room ${this.roomId}`);
       this.joinGame();
     });
 
@@ -26,7 +27,7 @@ class AIPlayer {
     });
 
     this.socket.on('lobbyUpdate', (data) => {
-      console.log(`${this.playerName} sees lobby:`, data.players.map(p => p.name));
+      console.log(`${this.playerName} sees lobby in room ${this.roomId}:`, data.players.map(p => p.name));
     });
 
     this.socket.on('needWildcardPosition', (data) => {
@@ -43,7 +44,7 @@ class AIPlayer {
   }
 
   joinGame() {
-    this.socket.emit('joinGame', this.playerName);
+    this.socket.emit('joinGame', { playerName: this.playerName, roomId: this.roomId });
   }
 
   disconnect() {
