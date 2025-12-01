@@ -574,6 +574,19 @@ io.on('connection', (socket) => {
     gameState.playerHands[socket.id].push(card);
     gameState.gamePhase = 'meld';
 
+    // Notify players who had buy requests that current player took the card
+    if (gameState.buyRequests.length > 0) {
+      gameState.players.forEach(playerId => {
+        const sock = io.sockets.sockets.get(playerId);
+        if (sock && gameState.buyRequests.some(r => r.playerId === playerId)) {
+          sock.emit('buyNotification', {
+            type: 'denied',
+            message: `✗ ${socket.playerName} took the discard - buy cancelled`
+          });
+        }
+      });
+    }
+
     // Clear any pending buy requests since current player took the card
     gameState.buyRequests = [];
     gameState.passedBuy = [];
@@ -1017,12 +1030,38 @@ function processBuyRequests(roomId) {
 
   // Give the first player in order the buy
   const buyingPlayer = sortedRequests[0].playerId;
+  const buyingPlayerSocket = io.sockets.sockets.get(buyingPlayer);
+  const buyingPlayerName = buyingPlayerSocket ? buyingPlayerSocket.playerName : 'Unknown';
+
   const discardCard = gameState.discardPile.pop(); // Remove from discard pile
   const deckCard = gameState.deck.shift();
 
   gameState.playerHands[buyingPlayer].push(discardCard);
   gameState.playerHands[buyingPlayer].push(deckCard);
   gameState.buyCount[buyingPlayer]++;
+
+  // Notify all players about the buy result
+  gameState.players.forEach(playerId => {
+    const socket = io.sockets.sockets.get(playerId);
+    if (socket) {
+      if (playerId === buyingPlayer) {
+        socket.emit('buyNotification', {
+          type: 'granted',
+          message: `✓ You won the buy! (${discardCard.rank}${discardCard.suit})`
+        });
+      } else if (gameState.buyRequests.some(r => r.playerId === playerId)) {
+        socket.emit('buyNotification', {
+          type: 'denied',
+          message: `✗ ${buyingPlayerName} won the buy (higher priority)`
+        });
+      } else {
+        socket.emit('buyNotification', {
+          type: 'info',
+          message: `${buyingPlayerName} bought ${discardCard.rank}${discardCard.suit}`
+        });
+      }
+    }
+  });
 
   // Clear all buy requests and set flag to prevent current player from taking discard
   gameState.buyRequests = [];
