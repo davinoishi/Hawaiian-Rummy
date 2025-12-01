@@ -480,6 +480,40 @@ io.on('connection', (socket) => {
 
       // Remove the converted requests
       gameState.buyRequests = gameState.buyRequests.filter(r => !requestsToRemove.includes(r.playerId));
+
+      // After auto-passing lower priority players, check if buy should be processed immediately
+      // Find the first buyer (closest after current player)
+      let firstBuyerDistance = Infinity;
+      let firstBuyer = null;
+      gameState.buyRequests.forEach(req => {
+        const reqIndex = gameState.players.indexOf(req.playerId);
+        const reqDistance = (reqIndex - currentPlayerIndex + gameState.players.length) % gameState.players.length;
+        if (reqDistance > 0 && reqDistance < firstBuyerDistance) {
+          firstBuyerDistance = reqDistance;
+          firstBuyer = req.playerId;
+        }
+      });
+
+      // Check if all players from current to buyer have passed
+      if (firstBuyer) {
+        let allPassed = true;
+        for (let i = 0; i < firstBuyerDistance; i++) {
+          const playerIndex = (currentPlayerIndex + i) % gameState.players.length;
+          const playerId = gameState.players[playerIndex];
+          if (!gameState.passedBuy.includes(playerId)) {
+            allPassed = false;
+            break;
+          }
+        }
+
+        // If all have passed, process the buy immediately
+        if (allPassed) {
+          processBuyRequests(roomId);
+          gameState.passedBuy = [];
+          broadcastGameState(roomId);
+          return;
+        }
+      }
     }
 
     broadcastGameState(roomId);
