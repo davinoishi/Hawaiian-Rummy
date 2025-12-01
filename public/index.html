@@ -2813,9 +2813,9 @@
                       </button>
                       <button
                         onClick={cancelMelds}
-                        disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw' || !gameState.myMelds || gameState.myMelds.length === 0}
+                        disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw' || !gameState.myMelds || gameState.myMelds.length === 0 || gameState.hasMetRequirements}
                         className={`px-4 py-2 rounded transition-all ${
-                          gameState.isMyTurn && gameState.gamePhase !== 'draw' && gameState.myMelds && gameState.myMelds.length > 0
+                          gameState.isMyTurn && gameState.gamePhase !== 'draw' && gameState.myMelds && gameState.myMelds.length > 0 && !gameState.hasMetRequirements
                             ? 'bg-yellow-600 text-white hover:bg-yellow-700 cursor-pointer'
                             : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                         }`}
