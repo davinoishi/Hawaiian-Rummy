@@ -260,9 +260,9 @@ class AIPlayer {
     // We must ALWAYS respond when shouldShowPass is true, even if we previously
     // evaluated this card voluntarily - the state signature prevents duplicate passes
     if (state.shouldShowPass && !state.hasPassed) {
-      // Decide whether to buy or pass
+      // Decide whether to buy or pass using cost-benefit analysis
       if (state.canBuy && !state.hasBuyRequest && discardCard && state.myBuyCount < state.maxBuys) {
-        if (this.isCardUseful(discardCard, state, true)) {
+        if (this.shouldBuyCard(discardCard, state)) {
           console.log(`${this.playerName} requests buy for: ${discardCard.rank}${discardCard.suit}`);
           this.socket.emit('requestBuy');
           return;
@@ -285,9 +285,9 @@ class AIPlayer {
       return;
     }
 
-    // Should we buy this card?
+    // Should we buy this card? Use cost-benefit analysis
     if (discardCard && state.myBuyCount < state.maxBuys) {
-      if (this.isCardUseful(discardCard, state, true)) {
+      if (this.shouldBuyCard(discardCard, state)) {
         console.log(`${this.playerName} requests buy for: ${discardCard.rank}${discardCard.suit}`);
         this.lastBuyDecisionTurn = currentTurnKey;
         this.socket.emit('requestBuy');
@@ -357,6 +357,150 @@ class AIPlayer {
   }
 
   // ===== UTILITY FUNCTIONS =====
+
+  // Strategic buying with cost-benefit analysis
+  shouldBuyCard(card, state) {
+    const hand = state.myHand || [];
+
+    // If already met requirements, only buy if card can be laid off
+    if (state.hasMetRequirements) {
+      const allPlayers = state.players || [];
+      for (const player of allPlayers) {
+        const melds = player.melds || [];
+        for (const meld of melds) {
+          if (this.canLayoffCard(card, meld)) {
+            // Can layoff - benefit is card point value saved
+            const benefit = this.getCardPoints(card);
+            const cost = this.estimatePenaltyCost();
+            console.log(`${this.playerName} buy analysis (post-meld): benefit=${benefit} vs cost=${cost}`);
+            return benefit > cost; // Only buy if card value > penalty cost
+          }
+        }
+      }
+      // Can't layoff, definitely don't buy
+      return false;
+    }
+
+    // Calculate the benefit of this card
+    const benefit = this.evaluateCardBenefit(card, state);
+
+    // Calculate the cost of buying (penalty card)
+    const cost = this.estimatePenaltyCost();
+
+    // Adjust threshold based on round number
+    const roundMultiplier = this.getRoundAggression(state.currentRound);
+    const adjustedThreshold = cost * roundMultiplier;
+
+    const shouldBuy = benefit > adjustedThreshold;
+
+    console.log(`${this.playerName} buy analysis: ${card.rank}${card.suit} benefit=${benefit.toFixed(1)} vs cost=${cost} (threshold=${adjustedThreshold.toFixed(1)}) => ${shouldBuy ? 'BUY' : 'PASS'}`);
+
+    return shouldBuy;
+  }
+
+  // Estimate the cost of the penalty card when buying
+  estimatePenaltyCost() {
+    // Average card values:
+    // - Joker (50) is rare
+    // - 2s (20) are somewhat common
+    // - Aces (15) are common
+    // - Face cards (10) are common
+    // - Number cards (5) are common
+    // Conservative estimate: assume ~15 points average
+    return 15;
+  }
+
+  // Get aggression multiplier based on round
+  getRoundAggression(round) {
+    // Early rounds (0-2): Be conservative (higher threshold = less buying)
+    if (round <= 2) return 1.5; // Need 1.5x benefit to buy
+
+    // Middle rounds (3-6): Balanced
+    if (round <= 6) return 1.2; // Need 1.2x benefit to buy
+
+    // Late rounds (7-9): Aggressive (lower threshold = more buying)
+    return 0.8; // Need 0.8x benefit to buy (buy more easily)
+  }
+
+  // Evaluate how much this card improves our hand
+  evaluateCardBenefit(card, state) {
+    const hand = state.myHand || [];
+    const requirements = this.getRoundRequirements(state.currentRound);
+
+    // Wildcards are extremely valuable - they can complete any meld
+    if (card.isWild) {
+      return 50; // High value - wildcards are game-changers
+    }
+
+    let benefit = 0;
+
+    // Check if card COMPLETES a meld right now
+    // For sets: need 2 more of same rank
+    const sameRankCards = hand.filter(c => c.rank === card.rank && !c.isWild);
+    if (sameRankCards.length >= 2) {
+      benefit += 40; // Completes a set - very valuable
+    } else if (sameRankCards.length === 1) {
+      benefit += 15; // One step closer to a set
+    }
+
+    // For runs: check if card fits into or completes a sequence
+    const sameSuitCards = hand.filter(c => c.suit === card.suit && !c.isWild);
+    const withCard = [...sameSuitCards, card].sort((a, b) =>
+      this.getCardValue(a) - this.getCardValue(b)
+    );
+
+    // Check if we can form a run of 4+ with this card
+    const longestRun = this.findLongestSequence(withCard);
+    if (longestRun >= 4) {
+      benefit += 35; // Completes a run - very valuable
+    } else if (longestRun === 3) {
+      benefit += 20; // Close to a run
+    } else if (longestRun === 2) {
+      benefit += 8; // Starting a run
+    }
+
+    // Check if this card can be laid off later (potential future value)
+    const allPlayers = state.players || [];
+    let canLayoffLater = false;
+    for (const player of allPlayers) {
+      const melds = player.melds || [];
+      for (const meld of melds) {
+        if (this.canLayoffCard(card, meld)) {
+          canLayoffLater = true;
+          benefit += 10; // Future layoff potential
+          break;
+        }
+      }
+      if (canLayoffLater) break;
+    }
+
+    return benefit;
+  }
+
+  // Find the longest consecutive sequence in sorted cards
+  findLongestSequence(sortedCards) {
+    if (sortedCards.length === 0) return 0;
+
+    let maxLength = 1;
+    let currentLength = 1;
+
+    for (let i = 1; i < sortedCards.length; i++) {
+      const prevValue = this.getCardValue(sortedCards[i - 1]);
+      const currValue = this.getCardValue(sortedCards[i]);
+
+      if (currValue === prevValue + 1) {
+        currentLength++;
+        maxLength = Math.max(maxLength, currentLength);
+      } else if (currValue === prevValue) {
+        // Duplicate value, skip
+        continue;
+      } else {
+        currentLength = 1;
+      }
+    }
+
+    return maxLength;
+  }
 
   isCardUseful(card, state, forBuying = false) {
     const hand = state.myHand || [];
