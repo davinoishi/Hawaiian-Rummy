@@ -162,6 +162,7 @@ function startNewRound(roomId) {
   gameState.buyCount = {};
   gameState.lastDiscarder = null;
   gameState.passedBuy = [];
+  gameState.buyJustProcessed = false; // Reset buy flag for new round
 
   // Deal cards to each player
   gameState.players.forEach(playerId => {
