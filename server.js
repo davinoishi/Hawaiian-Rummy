@@ -3,6 +3,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
 const AIPlayer = require('./aiPlayer');
+const { version } = require('./package.json');
 
 const app = express();
 app.use(cors());
@@ -769,8 +770,36 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Create a temporary meld object to check valid positions for the wildcard
+      const tempMeld = { type: 'run', cards: newCards };
+      const validPositions = getValidWildcardPositions(wildcardCard, tempMeld);
+
+      if (validPositions.length === 0) {
+        socket.emit('error', 'Wildcard cannot extend this run');
+        return;
+      }
+
+      // If multiple positions are valid and user hasn't chosen yet, prompt them
+      if (validPositions.length > 1 && !wildcardNewPosition) {
+        socket.emit('needWildcardReplacePosition', {
+          validPositions: validPositions,
+          cardId: cardId,
+          meldOwnerId: meldOwnerId,
+          meldIndex: meldIndex,
+          wildcardToReplace: wildcardToReplace
+        });
+        return;
+      }
+
+      // Validate the chosen position
+      const chosenPosition = wildcardNewPosition || validPositions[0];
+      if (!validPositions.includes(chosenPosition)) {
+        socket.emit('error', 'Invalid wildcard position');
+        return;
+      }
+
       // Now add wildcard at chosen position (this extends the run)
-      if (wildcardNewPosition === 'beginning') {
+      if (chosenPosition === 'beginning') {
         newCards = [wildcardCard, ...newCards];
       } else {
         newCards = [...newCards, wildcardCard];
@@ -1610,5 +1639,6 @@ function checkMeldsMatchRequirements(playerId, roomId) {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
+  console.log(`Hawaiian Rummy Server v${version}`);
   console.log(`Server running on http://localhost:${PORT}`);
 });

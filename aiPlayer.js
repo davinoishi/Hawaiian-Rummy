@@ -11,6 +11,12 @@ class AIPlayer {
     this.lastProcessedState = null; // Track last state to prevent duplicate actions
     this.pendingAction = false; // Flag to prevent overlapping actions
     this.lastBuyDecisionCard = null; // Track last card we made a buy decision on
+
+    // Opponent tracking for competitive AI
+    this.opponentTracking = {}; // Map of playerId -> tracking data
+    this.lastDiscardPileSize = 0; // Track discard pile to detect new discards
+    this.lastPlayerHands = {}; // Track hand sizes to detect picks
+    this.seenCards = new Set(); // All cards seen (in melds, discarded, etc)
   }
 
   connect() {
@@ -55,6 +61,9 @@ class AIPlayer {
 
   // Main decision handler based on game state
   handleGameState(state) {
+    // Update opponent tracking with every state update
+    this.updateOpponentTracking(state);
+
     // SPECIAL CASE: Handle roundSummary immediately without state tracking
     // All players need to continue, so always process this phase
     if (state.gamePhase === 'roundSummary') {
@@ -467,11 +476,25 @@ class AIPlayer {
       benefit += 8; // Starting a run
     }
 
-    // Note: We don't give points for "can layoff later" because:
-    // - You get the discard card (can layoff)
-    // - But you also get a penalty card (~15 points)
-    // - Net benefit is zero or negative
-    // Only buy if card helps complete melds NOW
+    // COMPETITIVE AI: Check if opponents want this card (denial value)
+    // If multiple opponents are tracking this card, buying it denies them
+    if (state.players) {
+      const myId = state.players.find(p => p.isMe)?.id;
+      const opponents = state.players.filter(p => p.id !== myId);
+      let opponentsWhoWantCard = 0;
+
+      for (const opponent of opponents) {
+        if (this.wouldHelpOpponentAdvanced(card, opponent)) {
+          opponentsWhoWantCard++;
+        }
+      }
+
+      // Add denial value if opponents want this card
+      if (opponentsWhoWantCard > 0) {
+        benefit += opponentsWhoWantCard * 10; // 10 points per opponent who wants it
+        console.log(`${this.playerName}: ${opponentsWhoWantCard} opponent(s) want ${card.rank}${card.suit}, denial value +${opponentsWhoWantCard * 10}`);
+      }
+    }
 
     return benefit;
   }
@@ -956,33 +979,24 @@ class AIPlayer {
     const myId = state.players.find(p => p.isMe)?.id;
     const opponents = state.players.filter(p => p.id !== myId);
 
-    // Discard highest point card that's least useful AND doesn't help ANY opponent
-    let worstCard = nonWildCards[0];
-    let worstScore = -1000;
+    // Use advanced discard scoring: lower score = better to discard
+    // Score considers: card potential, points, and opponent needs
+    let bestCard = nonWildCards[0];
+    let bestScore = Infinity;
 
     for (const card of nonWildCards) {
-      const usefulness = this.isCardUseful(card, state) ? -100 : 0;
-      const points = this.getCardPoints(card);
+      const score = this.calculateDiscardScore(card, hand, state, opponents);
 
-      // IMPORTANT: Check if this card would help ANY opponent
-      let helpsAnyOpponent = false;
-      for (const opponent of opponents) {
-        if (this.wouldHelpOpponent(card, opponent)) {
-          helpsAnyOpponent = true;
-          break;
-        }
-      }
-      const opponentPenalty = helpsAnyOpponent ? -200 : 0; // Heavy penalty for helping any opponent
+      console.log(`${this.playerName} discard analysis: ${card.rank}${card.suit} score=${score.toFixed(1)}`);
 
-      const score = points + usefulness + opponentPenalty;
-
-      if (score > worstScore) {
-        worstScore = score;
-        worstCard = card;
+      if (score < bestScore) {
+        bestScore = score;
+        bestCard = card;
       }
     }
 
-    return worstCard;
+    console.log(`${this.playerName} choosing to discard: ${bestCard.rank}${bestCard.suit} (score=${bestScore.toFixed(1)})`);
+    return bestCard;
   }
 
   // Check if discarding this card would help an opponent
@@ -1099,6 +1113,230 @@ class AIPlayer {
     ];
 
     return requirements[round] || requirements[0];
+  }
+
+  // ===== OPPONENT TRACKING METHODS =====
+
+  // Update opponent tracking based on game state changes
+  updateOpponentTracking(state) {
+    if (!state || !state.players) return;
+
+    const myId = state.players.find(p => p.isMe)?.id;
+
+    // Initialize tracking for new opponents
+    for (const player of state.players) {
+      if (player.id === myId) continue;
+
+      if (!this.opponentTracking[player.id]) {
+        this.opponentTracking[player.id] = {
+          pickedCards: [], // Cards taken from discard or bought
+          discardedCards: [], // Cards they discarded
+          likelyBuilding: { ranks: {}, suits: {} } // What they might be building
+        };
+      }
+
+      // Initialize last hand size tracking
+      if (this.lastPlayerHands[player.id] === undefined) {
+        this.lastPlayerHands[player.id] = player.handSize;
+      }
+    }
+
+    // Track new discards
+    if (state.discardPile && state.discardPile.length > this.lastDiscardPileSize) {
+      const newDiscard = state.discardPile[state.discardPile.length - 1];
+      this.seenCards.add(`${newDiscard.rank}${newDiscard.suit}`);
+
+      // Identify who discarded (the last player who acted)
+      const lastPlayerId = state.lastDiscarder;
+      if (lastPlayerId && lastPlayerId !== myId && this.opponentTracking[lastPlayerId]) {
+        this.opponentTracking[lastPlayerId].discardedCards.push(newDiscard);
+        console.log(`${this.playerName} tracked: opponent discarded ${newDiscard.rank}${newDiscard.suit}`);
+      }
+
+      this.lastDiscardPileSize = state.discardPile.length;
+    }
+
+    // Track cards opponents picked up (detect hand size increase)
+    for (const player of state.players) {
+      if (player.id === myId) continue;
+
+      const previousHandSize = this.lastPlayerHands[player.id];
+      const currentHandSize = player.handSize;
+
+      // If hand size increased, they picked up a card
+      if (currentHandSize > previousHandSize) {
+        const topDiscard = state.discardPile && state.discardPile.length > 0
+          ? state.discardPile[state.discardPile.length - 1]
+          : null;
+
+        if (topDiscard && this.opponentTracking[player.id]) {
+          this.opponentTracking[player.id].pickedCards.push(topDiscard);
+          this.updateLikelyBuilding(player.id, topDiscard);
+          console.log(`${this.playerName} tracked: opponent picked ${topDiscard.rank}${topDiscard.suit}`);
+        }
+      }
+
+      this.lastPlayerHands[player.id] = currentHandSize;
+    }
+
+    // Track cards in melds (these are known cards)
+    for (const player of state.players) {
+      if (player.melds) {
+        for (const meld of player.melds) {
+          for (const card of meld.cards) {
+            this.seenCards.add(`${card.rank}${card.suit}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Update what we think opponent is building
+  updateLikelyBuilding(playerId, card) {
+    const tracking = this.opponentTracking[playerId];
+    if (!tracking) return;
+
+    // Track rank frequency (for sets)
+    if (!tracking.likelyBuilding.ranks[card.rank]) {
+      tracking.likelyBuilding.ranks[card.rank] = 0;
+    }
+    tracking.likelyBuilding.ranks[card.rank]++;
+
+    // Track suit frequency (for runs)
+    if (!tracking.likelyBuilding.suits[card.suit]) {
+      tracking.likelyBuilding.suits[card.suit] = [];
+    }
+    tracking.likelyBuilding.suits[card.suit].push(card.rank);
+  }
+
+  // Check if a card would likely help an opponent
+  wouldHelpOpponentAdvanced(card, opponent) {
+    const tracking = this.opponentTracking[opponent.id];
+    if (!tracking) return false;
+
+    // Check if they're collecting this rank (for sets)
+    const rankCount = tracking.likelyBuilding.ranks[card.rank] || 0;
+    if (rankCount >= 1) {
+      console.log(`${this.playerName}: Card ${card.rank}${card.suit} would help opponent build set`);
+      return true; // They've picked this rank before
+    }
+
+    // Check if they're building a run in this suit
+    const suitCards = tracking.likelyBuilding.suits[card.suit] || [];
+    if (suitCards.length >= 2) {
+      // They have multiple cards of this suit, check if our card fits the sequence
+      const values = suitCards.map(rank => this.getCardValue({ rank, suit: card.suit }));
+      const cardValue = this.getCardValue(card);
+
+      for (const value of values) {
+        if (Math.abs(cardValue - value) <= 2) {
+          console.log(`${this.playerName}: Card ${card.rank}${card.suit} would help opponent build run`);
+          return true; // Our card is close to their suit collection
+        }
+      }
+    }
+
+    // Check if they can layoff on our melds
+    if (opponent.melds) {
+      for (const meld of opponent.melds) {
+        if (this.canLayoffCard(card, meld)) {
+          console.log(`${this.playerName}: Card ${card.rank}${card.suit} could layoff on opponent meld`);
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  // ===== DEADWOOD MINIMIZATION METHODS =====
+
+  // Calculate total deadwood (unmelded cards) points in hand
+  calculateDeadwood(hand, state) {
+    if (!hand || hand.length === 0) return 0;
+
+    // If we've met requirements, all cards in hand are deadwood
+    if (state && state.hasMetRequirements) {
+      return hand.reduce((sum, card) => sum + this.getCardPoints(card), 0);
+    }
+
+    // If we haven't met requirements, calculate deadwood as cards that don't contribute to potential melds
+    // For now, we'll use a simpler approach: assume all cards are deadwood until we meld
+    return hand.reduce((sum, card) => sum + this.getCardPoints(card), 0);
+  }
+
+  // Calculate potential value of a card (how close it is to forming melds)
+  calculateCardPotential(card, hand, state) {
+    if (card.isWild) {
+      return 100; // Wildcards have max potential
+    }
+
+    let potential = 0;
+
+    // Check set potential (cards of same rank)
+    const sameRankCards = hand.filter(c => c.rank === card.rank && !c.isWild && c.id !== card.id);
+    if (sameRankCards.length >= 2) {
+      potential += 50; // Can immediately form a set
+    } else if (sameRankCards.length === 1) {
+      potential += 25; // One away from a set
+    }
+
+    // Check run potential (cards of same suit in sequence)
+    const sameSuitCards = hand.filter(c => c.suit === card.suit && !c.isWild && c.id !== card.id);
+    const withCard = [...sameSuitCards, card].sort((a, b) =>
+      this.getCardValue(a) - this.getCardValue(b)
+    );
+
+    const longestRun = this.findLongestSequence(withCard);
+    if (longestRun >= 4) {
+      potential += 50; // Can form a run
+    } else if (longestRun === 3) {
+      potential += 30; // Close to a run
+    } else if (longestRun === 2) {
+      potential += 15; // Starting a run
+    }
+
+    // Check if card can be laid off on existing melds (post-meld phase)
+    if (state && state.hasMetRequirements && state.players) {
+      for (const player of state.players) {
+        if (player.melds) {
+          for (const meld of player.melds) {
+            if (this.canLayoffCard(card, meld)) {
+              potential += 40; // Can be laid off
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    return potential;
+  }
+
+  // Calculate efficiency score: lower is better to discard (high points, low potential)
+  calculateDiscardScore(card, hand, state, opponents) {
+    const points = this.getCardPoints(card);
+    const potential = this.calculateCardPotential(card, hand, state);
+
+    // Check if it helps any opponent
+    let helpsOpponent = false;
+    for (const opponent of opponents) {
+      if (this.wouldHelpOpponentAdvanced(card, opponent)) {
+        helpsOpponent = true;
+        break;
+      }
+    }
+
+    // Score formula: want to discard high-point, low-potential cards that don't help opponents
+    // Lower score = better to discard
+    let score = potential - points;
+
+    // Heavy penalty if it helps an opponent (we want to AVOID discarding these)
+    if (helpsOpponent) {
+      score += 200; // Make it much less likely to discard
+    }
+
+    return score;
   }
 
   sleepAsync(ms) {

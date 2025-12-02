@@ -549,6 +549,9 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
+        // Version tracking
+        const VERSION = 'v1.1.0';
+
         function HawaiianRummyMultiplayer() {
           const [socket, setSocket] = useState(null);
           const [gamePhase, setGamePhase] = useState('join'); // join, lobby, playing
@@ -568,6 +571,7 @@
           const [showHowToPlay, setShowHowToPlay] = useState(false);
           const [wildcardPositionPrompt, setWildcardPositionPrompt] = useState(null);
           const [meldWildcardPositionPrompt, setMeldWildcardPositionPrompt] = useState(null);
+          const [wildcardReplacePositionPrompt, setWildcardReplacePositionPrompt] = useState(null);
           const [buyCountdown, setBuyCountdown] = useState(null);
           const buyCountdownRef = useRef(null);
           const [animatingCard, setAnimatingCard] = useState(null);
@@ -955,6 +959,10 @@
               setMeldWildcardPositionPrompt(data);
             });
 
+            newSocket.on('needWildcardReplacePosition', (data) => {
+              setWildcardReplacePositionPrompt(data);
+            });
+
             newSocket.on('turnOrderUpdate', (data) => {
               console.log('Turn order update received:', data);
 
@@ -1276,14 +1284,15 @@
             }, 300);
           };
 
-          const replaceWildcard = (wildcardId, newPosition) => {
+          const replaceWildcard = (wildcardId) => {
             playSound('layoff');
+            // Send replacement request without position
+            // Server will prompt if multiple positions are valid
             socket.emit('layoffCard', {
               cardId: selectedCards[0],
               meldOwnerId: selectedMeld.ownerId,
               meldIndex: selectedMeld.meldIndex,
-              wildcardToReplace: wildcardId,
-              wildcardNewPosition: newPosition
+              wildcardToReplace: wildcardId
             });
             setSelectedCards([]);
             setLayoffMode(false);
@@ -1684,6 +1693,68 @@
             );
           };
 
+          // Wildcard Replace Position Prompt Modal
+          const WildcardReplacePositionModal = () => {
+            if (!wildcardReplacePositionPrompt) return null;
+
+            const handlePositionChoice = (position) => {
+              // Send layoff request with the wildcard replacement and position
+              socket.emit('layoffCard', {
+                cardId: wildcardReplacePositionPrompt.cardId,
+                meldOwnerId: wildcardReplacePositionPrompt.meldOwnerId,
+                meldIndex: wildcardReplacePositionPrompt.meldIndex,
+                wildcardToReplace: wildcardReplacePositionPrompt.wildcardToReplace,
+                wildcardNewPosition: position
+              });
+
+              // Clear states
+              setWildcardReplacePositionPrompt(null);
+              setSelectedCards([]);
+              setLayoffMode(false);
+              setSelectedMeld(null);
+              setWildcardReplaceMode(false);
+              setSelectedWildcard(null);
+            };
+
+            return (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
+                  <h2 className="text-2xl font-bold mb-4">Choose Wildcard Position</h2>
+                  <p className="mb-4">After replacing the wildcard, it can be placed at either end of the run. Where would you like to place it?</p>
+
+                  <div className="space-y-3">
+                    {wildcardReplacePositionPrompt.validPositions.includes('beginning') && (
+                      <button
+                        onClick={() => handlePositionChoice('beginning')}
+                        className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                      >
+                        Place at Beginning (Extend Down)
+                      </button>
+                    )}
+                    {wildcardReplacePositionPrompt.validPositions.includes('end') && (
+                      <button
+                        onClick={() => handlePositionChoice('end')}
+                        className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700"
+                      >
+                        Place at End (Extend Up)
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setWildcardReplacePositionPrompt(null);
+                        setLayoffMode(false);
+                        setWildcardReplaceMode(false);
+                      }}
+                      className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
           // Card Zoom Modal Component
           const CardZoomModal = () => {
             if (!zoomedCard) return null;
@@ -1946,7 +2017,8 @@
                         <img src="/hawaiian-rummy-logo.png" alt="Hawaiian Rummy Logo" className="max-w-full h-auto" style={{maxHeight: '180px'}} />
                       </div>
 
-                      <h1 className="text-3xl font-bold mb-6 text-center text-gray-800">Hawaiian Rummy</h1>
+                      <h1 className="text-3xl font-bold text-center text-gray-800">Hawaiian Rummy</h1>
+                      <p className="text-sm text-gray-500 text-center mb-6">{VERSION}</p>
 
                       {/* Name input */}
                       <input
@@ -2066,9 +2138,10 @@
                   <div className="relative z-10 flex items-center justify-center min-h-screen p-4">
                     <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full" style={{backgroundColor: 'rgba(255, 255, 255, 0.95)'}}>
                       {/* Logo */}
-                      <div className="flex justify-center mb-6">
+                      <div className="flex justify-center mb-2">
                         <img src="/hawaiian-rummy-logo.png" alt="Hawaiian Rummy Logo" className="max-w-full h-auto" style={{maxHeight: '150px'}} />
                       </div>
+                      <p className="text-sm text-gray-500 text-center mb-6">{VERSION}</p>
 
                       {/* Room ID Display */}
                       {roomId && (
@@ -2452,6 +2525,7 @@
             <>
               <WildcardPositionModal />
               <MeldWildcardPositionModal />
+              <WildcardReplacePositionModal />
               <HowToPlayModal />
               <CardZoomModal />
               <div className="min-h-screen bg-green-800 p-4 main-container">
@@ -2745,18 +2819,11 @@
                                      selectedMeld.meldIndex === meldIdx && (
                                       <div className="mt-2 flex gap-1 flex-wrap">
                                         <button
-                                          onClick={() => replaceWildcard(selectedWildcard, 'beginning')}
+                                          onClick={() => replaceWildcard(selectedWildcard)}
                                           disabled={!selectedWildcard}
                                           className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:bg-gray-300"
                                         >
-                                          Move to Start
-                                        </button>
-                                        <button
-                                          onClick={() => replaceWildcard(selectedWildcard, 'end')}
-                                          disabled={!selectedWildcard}
-                                          className="bg-blue-600 text-white px-2 py-0.5 rounded text-xs hover:bg-blue-700 disabled:bg-gray-300"
-                                        >
-                                          Move to End
+                                          Replace Wildcard
                                         </button>
                                         <button
                                           onClick={addToRunNormally}
