@@ -60,6 +60,8 @@ Requirements: a Linux machine to install noBGP agent )this will also be the host
    - This will create a proxy URL in the format https://xxxxxxxxxx.nobgp.com that will redirect users to proper host and port. There is no need for any other networking steps such as port forwarding.
 4. Share the URL with all your friends to enjoy the game.
 
+[noBGP Documentation](https://docs.nobgp.com)
+
 ## How to Play
 
 1. In your browser, Open http://localhost:3001 for LAN only play or https://xxxxxxxxxx.nobgp.com for remote play using noBGP
