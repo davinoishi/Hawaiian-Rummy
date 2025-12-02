@@ -593,6 +593,8 @@
           const [touchDragPosition, setTouchDragPosition] = useState(null); // Current touch position
           const [copiedFeedback, setCopiedFeedback] = useState(false); // Show "Copied!" feedback
           const [buyNotification, setBuyNotification] = useState(null); // Buy notification {type, message}
+          const [dragOverDiscard, setDragOverDiscard] = useState(false); // Highlight discard pile when dragging over
+          const [dragOverMeld, setDragOverMeld] = useState(null); // { playerId, meldIndex } when dragging over a meld
 
           const roundRequirements = [
             { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
@@ -1371,6 +1373,8 @@
           const handleDragEnd = () => {
             setDraggedCardId(null);
             setDragOverCardId(null);
+            setDragOverDiscard(false);
+            setDragOverMeld(null);
           };
 
           const handleDrop = (e, targetCardId) => {
@@ -1397,6 +1401,100 @@
 
             socket.emit('reorderHand', newHand.map(c => c.id));
             setDraggedCardId(null);
+          };
+
+          // Drag handlers for discard pile
+          const handleDiscardDragOver = (e) => {
+            if (!draggedCardId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          };
+
+          const handleDiscardDragEnter = (e) => {
+            if (!draggedCardId) return;
+            e.preventDefault();
+            setDragOverDiscard(true);
+          };
+
+          const handleDiscardDragLeave = (e) => {
+            const relatedTarget = e.relatedTarget;
+            if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+              setDragOverDiscard(false);
+            }
+          };
+
+          const handleDiscardDrop = (e) => {
+            e.preventDefault();
+            setDragOverDiscard(false);
+
+            if (!draggedCardId) return;
+
+            // Check if we can discard
+            if (!gameState.isMyTurn || gameState.gamePhase === 'draw') {
+              setMessage('Cannot discard now');
+              setDraggedCardId(null);
+              return;
+            }
+
+            // Perform the discard
+            playSound('discard');
+            setDiscardAnimation(true);
+            setAnimatingCard({ type: 'discard', cardId: draggedCardId });
+
+            setTimeout(() => {
+              socket.emit('discard', draggedCardId);
+              setDraggedCardId(null);
+              setAnimatingCard(null);
+              setTimeout(() => setDiscardAnimation(false), 500);
+            }, 300);
+          };
+
+          // Drag handlers for melds (layoff)
+          const handleMeldDragOver = (e, playerId, meldIndex) => {
+            if (!draggedCardId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          };
+
+          const handleMeldDragEnter = (e, playerId, meldIndex) => {
+            if (!draggedCardId) return;
+            e.preventDefault();
+            setDragOverMeld({ playerId, meldIndex });
+          };
+
+          const handleMeldDragLeave = (e) => {
+            const relatedTarget = e.relatedTarget;
+            if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+              setDragOverMeld(null);
+            }
+          };
+
+          const handleMeldDrop = (e, playerId, meldIndex) => {
+            e.preventDefault();
+            setDragOverMeld(null);
+
+            if (!draggedCardId) return;
+
+            // Check if we can layoff
+            if (!gameState.isMyTurn || !gameState.hasMetRequirements || gameState.gamePhase === 'draw') {
+              setMessage('Complete melds first before laying off');
+              setDraggedCardId(null);
+              return;
+            }
+
+            // Perform the layoff
+            playSound('layoff');
+            setAnimatingLayoffMeld({ ownerId: playerId, meldIndex });
+
+            setTimeout(() => {
+              socket.emit('layoffCard', {
+                cardId: draggedCardId,
+                meldOwnerId: playerId,
+                meldIndex: meldIndex
+              });
+              setDraggedCardId(null);
+              setAnimatingLayoffMeld(null);
+            }, 300);
           };
 
           const getCardColor = (suit) => {
@@ -2315,14 +2413,20 @@
                         {gameState.discardPile.length > 0 ? (
                           <div
                             onClick={gameState.canTakeDiscard ? takeDiscard : undefined}
-                            className={`bg-white border-2 border-gray-800 rounded p-3 w-20 h-28 text-center shadow-lg flex flex-col items-center justify-center ${discardAnimation ? 'discard-to-pile' : ''} ${
+                            onDragOver={handleDiscardDragOver}
+                            onDragEnter={handleDiscardDragEnter}
+                            onDragLeave={handleDiscardDragLeave}
+                            onDrop={handleDiscardDrop}
+                            className={`bg-white border-2 rounded p-3 w-20 h-28 text-center shadow-lg flex flex-col items-center justify-center ${discardAnimation ? 'discard-to-pile' : ''} ${
                               gameState.canTakeDiscard ? 'cursor-pointer hover:ring-4 hover:ring-blue-400 hover:scale-105' : ''
+                            } ${
+                              dragOverDiscard ? 'ring-4 ring-red-500 border-red-500 scale-105' : 'border-gray-800'
                             }`}
                             style={{
                               transform: animatingCard?.type === 'discard' ? 'scale(1.1)' : 'scale(1)',
                               transition: discardAnimation ? 'none' : 'transform 0.3s ease-in-out'
                             }}
-                            title={gameState.canTakeDiscard ? 'Click to take discard' : ''}
+                            title={draggedCardId ? 'Drop to discard' : (gameState.canTakeDiscard ? 'Click to take discard' : '')}
                           >
                             <div className={`text-2xl font-bold ${getCardColor(gameState.discardPile[gameState.discardPile.length - 1].suit)}`}>
                               {gameState.discardPile[gameState.discardPile.length - 1].rank}
@@ -2332,7 +2436,16 @@
                             </div>
                           </div>
                         ) : (
-                          <div className="w-20 h-28 border-2 border-dashed border-gray-300 rounded flex items-center justify-center text-xs text-gray-400">
+                          <div
+                            onDragOver={handleDiscardDragOver}
+                            onDragEnter={handleDiscardDragEnter}
+                            onDragLeave={handleDiscardDragLeave}
+                            onDrop={handleDiscardDrop}
+                            className={`w-20 h-28 border-2 border-dashed rounded flex items-center justify-center text-xs ${
+                              dragOverDiscard ? 'border-red-500 bg-red-50 ring-4 ring-red-400' : 'border-gray-300 text-gray-400'
+                            }`}
+                            title={draggedCardId ? 'Drop to discard' : ''}
+                          >
                             Discard
                           </div>
                         )}
@@ -2500,6 +2613,9 @@
                                   animatingLayoffMeld.ownerId === player.id &&
                                   animatingLayoffMeld.meldIndex === meldIdx;
 
+                                const isDragTarget = dragOverMeld?.playerId === player.id && dragOverMeld?.meldIndex === meldIdx;
+                                const canAcceptDrop = gameState.isMyTurn && gameState.hasMetRequirements && gameState.gamePhase !== 'draw' && draggedCardId;
+
                                 return (
                                   <div
                                     key={meldIdx}
@@ -2508,11 +2624,18 @@
                                         completeLayoff(player.id, meldIdx);
                                       }
                                     }}
+                                    onDragOver={(e) => handleMeldDragOver(e, player.id, meldIdx)}
+                                    onDragEnter={(e) => handleMeldDragEnter(e, player.id, meldIdx)}
+                                    onDragLeave={handleMeldDragLeave}
+                                    onDrop={(e) => handleMeldDrop(e, player.id, meldIdx)}
                                     className={`border rounded p-2 text-xs ${
                                       layoffMode && isCompatible
                                         ? 'border-green-500 bg-green-50 cursor-pointer hover:bg-green-100'
-                                        : 'border-gray-300'
+                                        : isDragTarget && canAcceptDrop
+                                          ? 'border-green-500 bg-green-100 ring-4 ring-green-400'
+                                          : 'border-gray-300'
                                     } ${isMeldAnimating ? 'meld-snap' : ''} ${isLayoffTarget ? 'meld-pulse' : ''}`}
+                                    title={draggedCardId && canAcceptDrop ? 'Drop to layoff card' : ''}
                                   >
                                     <div className="font-semibold mb-1 capitalize">
                                       {meld.type}
