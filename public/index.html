@@ -1306,16 +1306,28 @@
           };
 
           const discard = () => {
-            if (selectedCards.length !== 1) {
+            let cardToDiscard = null;
+
+            // If exactly one card is selected, discard it
+            if (selectedCards.length === 1) {
+              cardToDiscard = selectedCards[0];
+            }
+            // If no card selected but only one card remains in hand, discard it automatically
+            else if (selectedCards.length === 0 && gameState.myHand && gameState.myHand.length === 1) {
+              cardToDiscard = gameState.myHand[0].id;
+            }
+            // Otherwise, show error
+            else {
               setMessage('Select exactly one card to discard');
               return;
             }
+
             // Trigger discard animation and sound
             playSound('discard');
             setDiscardAnimation(true);
             setAnimatingCard({ type: 'discard', from: 'hand', to: 'discard' });
             setTimeout(() => {
-              socket.emit('discard', selectedCards[0]);
+              socket.emit('discard', cardToDiscard);
               setSelectedCards([]);
               setTimeout(() => {
                 setAnimatingCard(null);
