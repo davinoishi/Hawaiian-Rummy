@@ -459,20 +459,11 @@ class AIPlayer {
       benefit += 8; // Starting a run
     }
 
-    // Check if this card can be laid off later (potential future value)
-    const allPlayers = state.players || [];
-    let canLayoffLater = false;
-    for (const player of allPlayers) {
-      const melds = player.melds || [];
-      for (const meld of melds) {
-        if (this.canLayoffCard(card, meld)) {
-          canLayoffLater = true;
-          benefit += 10; // Future layoff potential
-          break;
-        }
-      }
-      if (canLayoffLater) break;
-    }
+    // Note: We don't give points for "can layoff later" because:
+    // - You get the discard card (can layoff)
+    // - But you also get a penalty card (~15 points)
+    // - Net benefit is zero or negative
+    // Only buy if card helps complete melds NOW
 
     return benefit;
   }
