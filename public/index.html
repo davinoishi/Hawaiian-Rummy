@@ -560,6 +560,7 @@
           const [message, setMessage] = useState('');
           const [draggedCardId, setDraggedCardId] = useState(null);
           const [dragOverCardId, setDragOverCardId] = useState(null);
+          const [isDragging, setIsDragging] = useState(false);
           const [layoffMode, setLayoffMode] = useState(false);
           const [selectedMeld, setSelectedMeld] = useState(null);
           const [wildcardReplaceMode, setWildcardReplaceMode] = useState(false);
@@ -1306,18 +1307,34 @@
           };
 
           const discard = () => {
+            console.log('Discard called. selectedCards:', selectedCards, 'handSize:', gameState?.myHand?.length);
+
+            if (!gameState.isMyTurn || gameState.gamePhase === 'draw') {
+              setMessage('Cannot discard now');
+              return;
+            }
+
             let cardToDiscard = null;
 
-            // If exactly one card is selected, discard it
+            // Priority 1: If exactly one card is selected, discard it
             if (selectedCards.length === 1) {
               cardToDiscard = selectedCards[0];
+              console.log('Discarding selected card:', cardToDiscard);
             }
-            // If no card selected but only one card remains in hand, discard it automatically
-            else if (selectedCards.length === 0 && gameState.myHand && gameState.myHand.length === 1) {
+            // Priority 2: If only one card remains in hand, discard it automatically (regardless of selection)
+            else if (gameState.myHand && gameState.myHand.length === 1) {
               cardToDiscard = gameState.myHand[0].id;
+              console.log('Auto-discarding last card:', cardToDiscard);
             }
-            // Otherwise, show error
+            // Priority 3: If multiple cards selected, show error
+            else if (selectedCards.length > 1) {
+              console.log('Error: Multiple cards selected');
+              setMessage('Select only ONE card to discard');
+              return;
+            }
+            // Priority 4: No selection and multiple cards in hand
             else {
+              console.log('Error: No card selected and multiple cards in hand');
               setMessage('Select exactly one card to discard');
               return;
             }
@@ -1337,17 +1354,26 @@
           };
 
           const toggleCardSelection = (cardId) => {
-            if (gameState && !gameState.isMyTurn) return;
-            if (gameState && gameState.gamePhase === 'draw') return;
-            
-            setSelectedCards(prev => 
-              prev.includes(cardId) 
+            if (gameState && !gameState.isMyTurn) {
+              console.log('Cannot select: not your turn');
+              return;
+            }
+            if (gameState && gameState.gamePhase === 'draw') {
+              console.log('Cannot select: draw phase');
+              return;
+            }
+
+            setSelectedCards(prev => {
+              const newSelection = prev.includes(cardId)
                 ? prev.filter(id => id !== cardId)
-                : [...prev, cardId]
-            );
+                : [...prev, cardId];
+              console.log('Card selection updated:', newSelection);
+              return newSelection;
+            });
           };
 
           const handleDragStart = (e, cardId) => {
+            setIsDragging(true);
             setDraggedCardId(cardId);
             // Set drag image offset for better visual feedback
             if (e.dataTransfer) {
@@ -1387,6 +1413,8 @@
             setDragOverCardId(null);
             setDragOverDiscard(false);
             setDragOverMeld(null);
+            // Reset isDragging after a small delay to allow click event to see it
+            setTimeout(() => setIsDragging(false), 50);
           };
 
           const handleDrop = (e, targetCardId) => {
@@ -1593,34 +1621,64 @@
               setMeldWildcardPositionPrompt(null);
             };
 
+            // Check if we have specific arrangements or legacy beginning/end choice
+            const hasArrangements = meldWildcardPositionPrompt.arrangements && meldWildcardPositionPrompt.arrangements.length > 0;
+
             return (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                 <div className="bg-white rounded-lg shadow-2xl max-w-md w-full p-6">
-                  <h2 className="text-2xl font-bold mb-4">Choose Wildcard Position</h2>
-                  <p className="mb-4">Your wildcards can be placed at either end of this run. Where would you like to place them?</p>
+                  <h2 className="text-2xl font-bold mb-4">Choose Run Arrangement</h2>
 
-                  <div className="space-y-3">
-                    <button
-                      onClick={() => handlePositionChoice('beginning')}
-                      className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
-                    >
-                      Place at Beginning (Lower Cards)
-                    </button>
-                    <button
-                      onClick={() => handlePositionChoice('end')}
-                      className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700"
-                    >
-                      Place at End (Higher Cards)
-                    </button>
-                    <button
-                      onClick={() => {
-                        setMeldWildcardPositionPrompt(null);
-                      }}
-                      className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  {hasArrangements ? (
+                    <>
+                      <p className="mb-4">Your wildcards can create multiple valid runs. Choose which sequence you want:</p>
+                      <div className="space-y-3">
+                        {meldWildcardPositionPrompt.arrangements.map((arr, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => handlePositionChoice(idx)}
+                            className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700 font-mono text-sm"
+                          >
+                            {arr.sequence}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => {
+                            setMeldWildcardPositionPrompt(null);
+                          }}
+                          className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-4">Your wildcards can be placed at either end of this run. Where would you like to place them?</p>
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => handlePositionChoice('beginning')}
+                          className="w-full bg-blue-600 text-white px-6 py-3 rounded hover:bg-blue-700"
+                        >
+                          Place at Beginning (Lower Cards)
+                        </button>
+                        <button
+                          onClick={() => handlePositionChoice('end')}
+                          className="w-full bg-green-600 text-white px-6 py-3 rounded hover:bg-green-700"
+                        >
+                          Place at End (Higher Cards)
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMeldWildcardPositionPrompt(null);
+                          }}
+                          className="w-full bg-gray-400 text-white px-6 py-3 rounded hover:bg-gray-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -2895,7 +2953,10 @@
                           onDragEnd={handleDragEnd}
                           onDrop={(e) => handleDrop(e, card.id)}
                           onClick={() => {
-                            toggleCardSelection(card.id);
+                            // Don't toggle if this was actually a drag operation
+                            if (!isDragging) {
+                              toggleCardSelection(card.id);
+                            }
                           }}
                           onTouchStart={(e) => handleCardTouchStart(e, card.id)}
                           onTouchMove={(e) => handleCardTouchMove(e, card.id)}
@@ -2988,7 +3049,7 @@
                   </div>
                 </div>
 
-                {/* Player Scores Section - Shows all players' scores and games won */}
+                {/* Player Scores Section - Shows all players' scores and rounds won */}
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-4 scores-section mobile-order-4">
                   <h2 className="text-xl font-bold mb-3">Player Scores</h2>
                   <div className="space-y-2">
@@ -3011,7 +3072,7 @@
                                 <strong className="text-lg">{player.score}</strong>
                               </div>
                               <div className="text-sm">
-                                <span className="text-gray-600">Games Won:</span>{' '}
+                                <span className="text-gray-600">Rounds Won:</span>{' '}
                                 <strong className="text-lg">{player.roundsWon || 0}</strong>
                               </div>
                             </div>

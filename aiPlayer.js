@@ -194,10 +194,12 @@ class AIPlayer {
       await this.sleepAsync(300);
     }
 
-    // If we've met requirements OR just created melds, try to layoff high-value cards
-    // (We check possibleMelds because hasMetRequirements might not be updated yet)
-    if (currentState.hasMetRequirements || possibleMelds.length > 0) {
-      await this.handleLayoffPhase(currentState);
+    // If we've met requirements, try to layoff high-value cards
+    // Wait a bit for server to update hasMetRequirements after creating melds
+    await this.sleepAsync(300);
+    const updatedState = this.gameState || currentState;
+    if (updatedState.hasMetRequirements) {
+      await this.handleLayoffPhase(updatedState);
     }
 
     // After melding and layoffs, discard
@@ -297,6 +299,12 @@ class AIPlayer {
 
   // ===== LAYOFF LOGIC =====
   async handleLayoffPhase(state) {
+    // Can only lay off after meeting round requirements
+    const currentState = this.gameState || state;
+    if (!currentState.hasMetRequirements) {
+      return;
+    }
+
     // Keep laying off cards until no more can be laid off
     let madeLayoff = true;
 
@@ -304,9 +312,9 @@ class AIPlayer {
       madeLayoff = false;
 
       // Get fresh state each iteration
-      const currentState = this.gameState || state;
-      const hand = currentState.myHand || [];
-      const allPlayers = currentState.players || [];
+      const freshState = this.gameState || currentState;
+      const hand = freshState.myHand || [];
+      const allPlayers = freshState.players || [];
 
       if (hand.length === 0) break;
 

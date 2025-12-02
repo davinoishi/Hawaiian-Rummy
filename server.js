@@ -665,16 +665,25 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Check if run needs wildcard position choice
-    if (type === 'run' && !wildcardPlacement && needsWildcardPositionChoice(cards)) {
-      socket.emit('needMeldWildcardPosition', {
-        cardIds,
-        type
-      });
-      return;
+    // Check if run needs wildcard arrangement choice
+    if (type === 'run' && wildcardPlacement === undefined) {
+      const arrangements = getPossibleRunArrangements(cards);
+
+      if (arrangements.length > 1) {
+        // Multiple valid arrangements - prompt user to choose
+        socket.emit('needMeldWildcardPosition', {
+          cardIds,
+          type,
+          arrangements: arrangements.map(a => ({
+            sequence: a.sequence,
+            description: `${a.sequence} (${a.values.length} cards)`
+          }))
+        });
+        return;
+      }
     }
 
-    // Sort run cards with wildcard placement
+    // Sort run cards with wildcard placement (arrangement index)
     const sortedCards = type === 'run' ? sortRunCards(cards, wildcardPlacement) : cards;
 
     gameState.playerMelds[socket.id].push({ type, cards: sortedCards });
@@ -1240,61 +1249,141 @@ function validateSet(cards) {
   return nonWildCards.every(c => c.rank === rank);
 }
 
-function validateRun(cards) {
-  if (cards.length < 4) return false;
+// Get all possible valid run arrangements with wildcards
+function getPossibleRunArrangements(cards) {
+  if (cards.length < 4) return [];
+
   const nonWildCards = cards.filter(c => !c.isWild);
-  if (nonWildCards.length === 0) return false;
-
-  const suit = nonWildCards[0].suit;
-  if (!nonWildCards.every(c => c.suit === suit)) return false;
-
-  const values = nonWildCards.map(c => {
-    if (c.rank === 'A') return { low: 1, high: 14, rank: c.rank };
-    return { low: getRankValue(c.rank), high: getRankValue(c.rank), rank: c.rank };
-  });
-
   const wildCount = cards.filter(c => c.isWild).length;
 
-  // Try Aces low
-  let sortedLow = values.map(v => v.low).sort((a, b) => a - b);
-  let gapsLow = 0;
-  let maxGapLow = 0;
-  for (let i = 1; i < sortedLow.length; i++) {
-    const gap = sortedLow[i] - sortedLow[i-1] - 1;
-    if (gap < 0) return false;
-    gapsLow += gap;
-    if (gap > maxGapLow) maxGapLow = gap;
-  }
-  // Check if gaps can be filled with wildcards
-  if (gapsLow <= wildCount) {
-    // Additional check: make sure this isn't a wrap-around
-    // A wrap-around (like K-A-2-3) would have a very large gap (8+) in the middle
-    // A normal run (like 3-4-5-6-7-8-J-Q-K) has small fillable gaps
-    if (maxGapLow <= 7) {
-      return true;
+  if (nonWildCards.length === 0) return [];
+
+  const suit = nonWildCards[0].suit;
+  if (!nonWildCards.every(c => c.suit === suit)) return [];
+
+  const arrangements = [];
+
+  // Try both Ace low and Ace high interpretations
+  for (const aceHigh of [false, true]) {
+    // Get values for non-wild cards
+    const cardValues = nonWildCards.map(c => {
+      if (c.rank === 'A') return aceHigh ? 14 : 1;
+      return getRankValue(c.rank);
+    }).sort((a, b) => a - b);
+
+    // For each possible starting position, try to build a run
+    // The run must include all non-wild cards
+    const minCard = cardValues[0];
+    const maxCard = cardValues[cardValues.length - 1];
+
+    // Calculate how many wildcards are needed to fill gaps between non-wild cards
+    let gapWilds = 0;
+    for (let i = 1; i < cardValues.length; i++) {
+      gapWilds += cardValues[i] - cardValues[i-1] - 1;
+    }
+
+    // Remaining wildcards can extend the run at either end
+    const remainingWilds = wildCount - gapWilds;
+
+    if (remainingWilds < 0) continue; // Not enough wildcards to fill gaps
+
+    // Try different distributions of remaining wildcards
+    for (let wildsAtStart = 0; wildsAtStart <= remainingWilds; wildsAtStart++) {
+      const wildsAtEnd = remainingWilds - wildsAtStart;
+
+      const startValue = minCard - wildsAtStart;
+      const endValue = maxCard + wildsAtEnd;
+
+      // Check if this creates a valid run (no wrap-around)
+      // Wrap-around would be: K-A-2 or similar where we go from 13->14(A)->2
+      // Valid range is 1-14, no wrapping allowed
+      if (startValue < 1) continue; // Would need Ace to be low but also go below Ace
+      if (endValue > 14) continue; // Would go beyond Ace high
+
+      // Check that the sequence doesn't wrap around
+      // A wrap would have Ace as both high (14) and in a low position (near 2,3)
+      if (aceHigh && startValue <= 3) continue; // If Ace is high, can't have 2,3 at start
+      if (!aceHigh && endValue >= 13) continue; // If Ace is low, can't have K at end
+
+      // Build the sequence string
+      const sequence = [];
+      for (let v = startValue; v <= endValue; v++) {
+        let rank;
+        if (v === 1) rank = 'A';
+        else if (v === 11) rank = 'J';
+        else if (v === 12) rank = 'Q';
+        else if (v === 13) rank = 'K';
+        else if (v === 14) rank = 'A';
+        else rank = v.toString();
+
+        sequence.push(rank);
+      }
+
+      // Check if this arrangement is valid and unique
+      if (sequence.length === cards.length) {
+        const sequenceStr = sequence.join('-');
+
+        // Don't add duplicates
+        if (!arrangements.find(a => a.sequence === sequenceStr)) {
+          arrangements.push({
+            sequence: sequenceStr,
+            startValue,
+            endValue,
+            aceHigh,
+            values: Array.from({length: endValue - startValue + 1}, (_, i) => startValue + i)
+          });
+        }
+      }
     }
   }
 
-  // Try Aces high
-  let sortedHigh = values.map(v => v.high).sort((a, b) => a - b);
-  let gapsHigh = 0;
-  let maxGapHigh = 0;
-  for (let i = 1; i < sortedHigh.length; i++) {
-    const gap = sortedHigh[i] - sortedHigh[i-1] - 1;
-    if (gap < 0) return false;
-    gapsHigh += gap;
-    if (gap > maxGapHigh) maxGapHigh = gap;
-  }
-  // Check if gaps can be filled with wildcards
-  if (gapsHigh <= wildCount) {
-    // Additional check: make sure this isn't a wrap-around
-    // A wrap-around would have a very large gap (8+) in the middle
-    if (maxGapHigh <= 7) {
-      return true;
+  return arrangements;
+}
+
+function validateRun(cards) {
+  // Use the new arrangement checker to ensure no wrap-around sequences
+  const arrangements = getPossibleRunArrangements(cards);
+  return arrangements.length > 0;
+}
+
+// Helper function to sort cards to match a specific arrangement
+function sortCardsToMatchArrangement(cards, arrangement) {
+  const nonWildCards = cards.filter(c => !c.isWild);
+  const wildCards = cards.filter(c => c.isWild);
+
+  // Sort non-wild cards according to the arrangement
+  const sortedNonWilds = [...nonWildCards].sort((a, b) => {
+    const aVal = (a.rank === 'A' && arrangement.aceHigh) ? 14 : getRankValue(a.rank);
+    const bVal = (b.rank === 'A' && arrangement.aceHigh) ? 14 : getRankValue(b.rank);
+    return aVal - bVal;
+  });
+
+  const result = [];
+  let wildIdx = 0;
+  let nonWildIdx = 0;
+
+  // Build the sequence according to the arrangement values
+  for (const value of arrangement.values) {
+    // Check if this value matches the next non-wild card
+    if (nonWildIdx < sortedNonWilds.length) {
+      const card = sortedNonWilds[nonWildIdx];
+      const cardValue = (card.rank === 'A' && arrangement.aceHigh) ? 14 : getRankValue(card.rank);
+
+      if (cardValue === value) {
+        result.push(card);
+        nonWildIdx++;
+        continue;
+      }
+    }
+
+    // This position needs a wildcard
+    if (wildIdx < wildCards.length) {
+      result.push(wildCards[wildIdx]);
+      wildIdx++;
     }
   }
 
-  return false;
+  return result;
 }
 
 function sortRunCards(cards, wildcardPlacement = null) {
@@ -1302,6 +1391,15 @@ function sortRunCards(cards, wildcardPlacement = null) {
   const wildCards = cards.filter(c => c.isWild);
 
   if (nonWildCards.length === 0) return cards;
+
+  // If wildcardPlacement is a number, use the specific arrangement
+  if (typeof wildcardPlacement === 'number') {
+    const arrangements = getPossibleRunArrangements(cards);
+    if (wildcardPlacement >= 0 && wildcardPlacement < arrangements.length) {
+      const arrangement = arrangements[wildcardPlacement];
+      return sortCardsToMatchArrangement(cards, arrangement);
+    }
+  }
 
   const ranks = nonWildCards.map(c => c.rank);
   const hasKing = ranks.includes('K');
