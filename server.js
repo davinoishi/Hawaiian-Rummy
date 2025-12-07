@@ -2,11 +2,81 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const AIPlayer = require('./aiPlayer');
 const { version } = require('./package.json');
 
+// ===== ANALYTICS LOGGING =====
+const ANALYTICS_FILE = path.join(__dirname, 'analytics.log');
+
+// Simple analytics logger
+function logAnalytics(event, data = {}) {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    event,
+    ...data
+  };
+  const logLine = JSON.stringify(logEntry) + '\n';
+
+  // Append to file
+  fs.appendFile(ANALYTICS_FILE, logLine, (err) => {
+    if (err) console.error('Error writing analytics:', err);
+  });
+
+  // Also log to console for PM2 logs
+  console.log(`[ANALYTICS] ${event}:`, data);
+}
+
+// Analytics summary endpoint
+function getAnalyticsSummary() {
+  try {
+    const logData = fs.readFileSync(ANALYTICS_FILE, 'utf8');
+    const lines = logData.trim().split('\n').filter(line => line);
+    const events = lines.map(line => JSON.parse(line));
+
+    const summary = {
+      totalEvents: events.length,
+      pageViews: events.filter(e => e.event === 'page_view').length,
+      uniqueVisitors: new Set(events.filter(e => e.ip).map(e => e.ip)).size,
+      connections: events.filter(e => e.event === 'connection').length,
+      gamesCreated: events.filter(e => e.event === 'game_created').length,
+      gamesStarted: events.filter(e => e.event === 'game_started').length,
+      playersJoined: events.filter(e => e.event === 'player_joined').length,
+      gamesCompleted: events.filter(e => e.event === 'game_completed').length,
+      tutorialStarts: events.filter(e => e.event === 'tutorial_started').length,
+      firstEvent: events.length > 0 ? events[0].timestamp : null,
+      lastEvent: events.length > 0 ? events[events.length - 1].timestamp : null
+    };
+
+    return summary;
+  } catch (err) {
+    return { error: 'No analytics data yet', totalEvents: 0 };
+  }
+}
+
 const app = express();
 app.use(cors());
+
+// Analytics middleware - log all page requests
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path === '/') {
+    logAnalytics('page_view', {
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      referer: req.get('referer')
+    });
+  }
+  next();
+});
+
+// Analytics endpoint
+app.get('/api/analytics', (req, res) => {
+  const summary = getAnalyticsSummary();
+  res.json(summary);
+});
+
 app.use(express.static('public'));
 
 const server = http.createServer(app);
@@ -284,11 +354,19 @@ function startGame(roomId) {
     gameState.roundScores[playerId] = [];
   });
 
+  // Log game started analytics
+  logAnalytics('game_started', {
+    roomId,
+    playerCount: gameState.players.length,
+    tutorialMode: gameState.tutorialMode || false
+  });
+
   startNewRound(roomId);
 }
 
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
+  logAnalytics('connection', { socketId: socket.id });
 
   // Create a new room
   socket.on('createRoom', (playerName, tutorialMode, callback) => {
@@ -305,6 +383,11 @@ io.on('connection', (socket) => {
     gameState.tutorialMode = tutorialMode || false;
 
     console.log(`[Room ${roomId}] ${playerName} created room. Tutorial mode: ${tutorialMode}. Room ID: ${roomId}`);
+    logAnalytics(tutorialMode ? 'tutorial_started' : 'game_created', {
+      roomId,
+      playerName,
+      tutorialMode
+    });
 
     if (callback) {
       callback({ roomId, tutorialMode: gameState.tutorialMode });
@@ -345,6 +428,11 @@ io.on('connection', (socket) => {
     gameState.players.push(socket.id);
 
     console.log(`[Room ${roomId}] ${playerName} joined. Players: ${gameState.players.length}`);
+    logAnalytics('player_joined', {
+      roomId,
+      playerName,
+      playerCount: gameState.players.length
+    });
 
     if (callback) {
       callback({ success: true, roomId });
@@ -1141,6 +1229,16 @@ function endRound(winnerId, roomId) {
     broadcastGameState(roomId);
   } else {
     gameState.gamePhase = 'gameOver';
+
+    // Log game completion analytics
+    const winnerScore = Math.min(...gameState.players.map(id => gameState.playerScores[id]));
+    logAnalytics('game_completed', {
+      roomId,
+      playerCount: gameState.players.length,
+      winningScore: winnerScore,
+      tutorialMode: gameState.tutorialMode || false
+    });
+
     broadcastGameState(roomId);
   }
 }
