@@ -291,7 +291,7 @@ io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
   // Create a new room
-  socket.on('createRoom', (playerName, callback) => {
+  socket.on('createRoom', (playerName, tutorialMode, callback) => {
     const roomId = generateRoomId();
     getOrCreateRoom(roomId);
 
@@ -302,11 +302,12 @@ io.on('connection', (socket) => {
 
     const gameState = games.get(roomId);
     gameState.players.push(socket.id);
+    gameState.tutorialMode = tutorialMode || false;
 
-    console.log(`[Room ${roomId}] ${playerName} created room. Room ID: ${roomId}`);
+    console.log(`[Room ${roomId}] ${playerName} created room. Tutorial mode: ${tutorialMode}. Room ID: ${roomId}`);
 
     if (callback) {
-      callback({ roomId });
+      callback({ roomId, tutorialMode: gameState.tutorialMode });
     }
 
     io.to(roomId).emit('lobbyUpdate', {
@@ -315,7 +316,8 @@ io.on('connection', (socket) => {
         const sock = io.sockets.sockets.get(id);
         return { id, name: sock ? sock.playerName : 'Unknown' };
       }),
-      gameStarted: gameState.gameStarted
+      gameStarted: gameState.gameStarted,
+      tutorialMode: gameState.tutorialMode
     });
   });
 
@@ -358,6 +360,69 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Tutorial-specific game initialization
+  function initializeTutorialGame(roomId) {
+    const gameState = games.get(roomId);
+
+    console.log(`[Room ${roomId}] Initializing tutorial game`);
+
+    // Tutorial scenario predetermined cards
+    const TUTORIAL_SCENARIO = {
+      playerHand: [
+        // First set (7s)
+        { rank: '7', suit: '♠', id: 'tutorial-7s', isWild: false },
+        { rank: '7', suit: '♥', id: 'tutorial-7h', isWild: false },
+        { rank: '7', suit: '♦', id: 'tutorial-7d', isWild: false },
+        // Second set (8s)
+        { rank: '8', suit: '♠', id: 'tutorial-8s', isWild: false },
+        { rank: '8', suit: '♥', id: 'tutorial-8h', isWild: false },
+        { rank: '8', suit: '♦', id: 'tutorial-8d', isWild: false },
+        // Extra cards for discard practice (9 total)
+        { rank: '6', suit: '♠', id: 'tutorial-6s', isWild: false },
+        { rank: '9', suit: '♠', id: 'tutorial-9s', isWild: false },
+        { rank: 'K', suit: '♥', id: 'tutorial-kh', isWild: false }
+      ],
+      deckCards: [
+        // Card to draw on step 5
+        { rank: '10', suit: '♠', id: 'tutorial-10s', isWild: false },
+        // More cards for later draws
+        { rank: '3', suit: '♣', id: 'tutorial-3c', isWild: false },
+        { rank: 'Q', suit: '♦', id: 'tutorial-qd', isWild: false }
+      ]
+    };
+
+    // Use tutorial scenario instead of random deck
+    gameState.playerHands = {
+      [gameState.players[0]]: [...TUTORIAL_SCENARIO.playerHand]
+    };
+
+    gameState.deck = [...TUTORIAL_SCENARIO.deckCards];
+    gameState.discardPile = [];
+    gameState.currentRound = 0; // Round 1
+    gameState.tutorialStep = 0;
+    gameState.gameStarted = true;
+    gameState.currentPlayerIndex = 0;
+    gameState.gamePhase = 'draw';
+
+    // Initialize player-specific state
+    gameState.players.forEach(playerId => {
+      gameState.playerMelds[playerId] = [];
+      gameState.playerScores[playerId] = 0;
+      gameState.roundScores[playerId] = [];
+      gameState.hasMetRequirements[playerId] = false;
+      gameState.buyCount[playerId] = 0;
+      gameState.roundsWon[playerId] = 0;
+    });
+
+    gameState.buyRequests = [];
+    gameState.maxBuysPerRound = {};
+    gameState.lastDiscarder = null;
+    gameState.passedBuy = [];
+    gameState.buyJustProcessed = false;
+
+    console.log(`[Room ${roomId}] Tutorial initialized with predetermined cards`);
+  }
+
   socket.on('startGame', () => {
     const roomId = socket.roomId;
     if (!roomId) return;
@@ -373,6 +438,13 @@ io.on('connection', (socket) => {
     // Prevent multiple start attempts
     if (gameState.gameStarted || gameState.gamePhase === 'turnOrder') {
       console.log(`[Room ${roomId}] Game already started or starting, ignoring duplicate start request`);
+      return;
+    }
+
+    // Check for tutorial mode
+    if (gameState.tutorialMode) {
+      initializeTutorialGame(roomId);
+      broadcastGameState(roomId);
       return;
     }
 
@@ -630,14 +702,21 @@ io.on('connection', (socket) => {
     broadcastGameState(roomId);
   });
 
-  socket.on('createMeld', ({ type, cardIds, wildcardPlacement }) => {
+  socket.on('createMeld', ({ type, cardIds, wildcardPlacement }, callback) => {
     const roomId = socket.roomId;
-    if (!roomId) return;
+    if (!roomId) {
+      if (callback) callback({ success: false, error: 'No room' });
+      return;
+    }
 
     const gameState = games.get(roomId);
-    if (!gameState) return;
+    if (!gameState) {
+      if (callback) callback({ success: false, error: 'No game state' });
+      return;
+    }
 
     if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase === 'draw') {
+      if (callback) callback({ success: false, error: 'Not your turn' });
       return;
     }
 
@@ -648,6 +727,7 @@ io.on('connection', (socket) => {
     const isValid = type === 'set' ? validateSet(cards) : validateRun(cards);
     if (!isValid) {
       socket.emit('error', 'Invalid meld');
+      if (callback) callback({ success: false, error: 'Invalid meld' });
       return;
     }
 
@@ -657,12 +737,16 @@ io.on('connection', (socket) => {
     const currentRuns = gameState.playerMelds[socket.id].filter(m => m.type === 'run').length;
 
     if (type === 'set' && currentSets >= req.sets) {
-      socket.emit('error', `Round ${gameState.currentRound + 1} only requires ${req.sets} set(s)`);
+      const errorMsg = `Round ${gameState.currentRound + 1} only requires ${req.sets} set(s)`;
+      socket.emit('error', errorMsg);
+      if (callback) callback({ success: false, error: errorMsg });
       return;
     }
 
     if (type === 'run' && currentRuns >= req.runs) {
-      socket.emit('error', `Round ${gameState.currentRound + 1} only requires ${req.runs} run(s)`);
+      const errorMsg = `Round ${gameState.currentRound + 1} only requires ${req.runs} run(s)`;
+      socket.emit('error', errorMsg);
+      if (callback) callback({ success: false, error: errorMsg });
       return;
     }
 
@@ -698,8 +782,12 @@ io.on('connection', (socket) => {
     // Check if player won by melding all cards
     if (gameState.playerHands[socket.id].length === 0 && gameState.hasMetRequirements[socket.id]) {
       endRound(socket.id, roomId);
+      if (callback) callback({ success: true });
       return;
     }
+
+    // Send success callback
+    if (callback) callback({ success: true });
 
     broadcastGameState(roomId);
   });
@@ -1539,17 +1627,46 @@ function getValidWildcardPositions(wildcard, meld) {
   }
 
   const validPositions = [];
+  const nonWildCards = meld.cards.filter(c => !c.isWild);
 
-  // Test if wildcard can go at the beginning
-  const testBeginning = [wildcard, ...meld.cards];
-  if (validateRun(testBeginning)) {
-    validPositions.push('beginning');
+  if (nonWildCards.length === 0) {
+    return []; // Can't determine positions without natural cards
   }
 
-  // Test if wildcard can go at the end
-  const testEnd = [...meld.cards, wildcard];
-  if (validateRun(testEnd)) {
-    validPositions.push('end');
+  // Determine if Ace should be high or low based on existing cards
+  const ranks = nonWildCards.map(c => c.rank);
+  const hasKing = ranks.includes('K');
+  const hasQueen = ranks.includes('Q');
+  const hasAce = ranks.includes('A');
+  const hasTwo = ranks.includes('2');
+  const hasThree = ranks.includes('3');
+  const aceHigh = (hasKing || hasQueen) && !hasTwo && !hasThree;
+
+  // Get values of all non-wild cards
+  const nonWildValues = nonWildCards.map(c => {
+    const val = getRankValue(c.rank);
+    return (c.rank === 'A' && aceHigh) ? 14 : val;
+  }).sort((a, b) => a - b);
+
+  const minValue = nonWildValues[0];
+  const maxValue = nonWildValues[nonWildValues.length - 1];
+
+  // Check if wildcard can go at the beginning (one before min)
+  const valueAtBeginning = minValue - 1;
+  if (valueAtBeginning >= 1 && valueAtBeginning <= 14) {
+    // Make sure it doesn't create an invalid sequence
+    if (!(valueAtBeginning === 14 && !aceHigh) && !(valueAtBeginning === 1 && aceHigh)) {
+      validPositions.push('beginning');
+    }
+  }
+
+  // Check if wildcard can go at the end (one after max)
+  const valueAtEnd = maxValue + 1;
+  if (valueAtEnd >= 1 && valueAtEnd <= 14) {
+    // Make sure it doesn't create an invalid sequence
+    if (!(valueAtEnd === 14 && !aceHigh) && !(valueAtEnd === 1 && aceHigh)) {
+      validPositions.push('end');
+    }
   }
 
   return validPositions;

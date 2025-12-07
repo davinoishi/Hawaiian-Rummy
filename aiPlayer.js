@@ -194,21 +194,77 @@ class AIPlayer {
     const hand = currentState.myHand || [];
     const currentMelds = currentState.myMelds || [];
 
-    // Try to create melds to meet requirements
-    const possibleMelds = this.findBestMelds(hand, currentState);
+    // PRIORITY 1: If we've already met requirements, check if we can GO OUT completely
+    if (currentState.hasMetRequirements) {
+      console.log(`${this.playerName} already met requirements, checking if can go out with ${hand.length} cards`);
 
-    for (const meld of possibleMelds) {
-      this.socket.emit('createMeld', { type: meld.type, cardIds: meld.cardIds });
-      // Wait a bit for server to process
-      await this.sleepAsync(300);
+      const goOutMelds = this.findGoOutMelds(hand, currentState);
+
+      if (goOutMelds && goOutMelds.length > 0) {
+        console.log(`${this.playerName} GOING OUT with ${goOutMelds.length} melds!`);
+
+        // Create all melds to go out
+        for (const meld of goOutMelds) {
+          this.socket.emit('createMeld', { type: meld.type, cardIds: meld.cardIds });
+          await this.sleepAsync(300);
+        }
+
+        // Don't discard - we should have won!
+        this.pendingAction = false;
+        return;
+      }
+
+      // Can't go out, try to layoff high-value cards instead
+      console.log(`${this.playerName} cannot go out, trying layoffs`);
+      await this.handleLayoffPhase(currentState);
+
+      // After layoffs, discard
+      setTimeout(() => {
+        this.handleDiscardPhase(currentState);
+      }, 500);
+      return;
     }
 
-    // If we've met requirements, try to layoff high-value cards
-    // Wait a bit for server to update hasMetRequirements after creating melds
-    await this.sleepAsync(300);
-    const updatedState = this.gameState || currentState;
-    if (updatedState.hasMetRequirements) {
-      await this.handleLayoffPhase(updatedState);
+    // PRIORITY 2: Haven't met requirements yet, try to meet them
+    // Use aggressive mode to maximize cards melded when meeting requirements
+    const possibleMelds = this.findBestMelds(hand, currentState, true);
+
+    if (possibleMelds.length > 0) {
+      console.log(`${this.playerName} trying to meet requirements with ${possibleMelds.length} melds (aggressive mode)`);
+
+      for (const meld of possibleMelds) {
+        this.socket.emit('createMeld', { type: meld.type, cardIds: meld.cardIds });
+        await this.sleepAsync(300);
+      }
+
+      // Wait for server to update hasMetRequirements
+      await this.sleepAsync(300);
+      const updatedState = this.gameState || currentState;
+
+      // PRIORITY 3: After meeting requirements, immediately check if we can GO OUT
+      if (updatedState.hasMetRequirements) {
+        const remainingHand = updatedState.myHand || [];
+        console.log(`${this.playerName} just met requirements, ${remainingHand.length} cards left, checking if can go out`);
+
+        const goOutMelds = this.findGoOutMelds(remainingHand, updatedState);
+
+        if (goOutMelds && goOutMelds.length > 0) {
+          console.log(`${this.playerName} GOING OUT after meeting requirements with ${goOutMelds.length} additional melds!`);
+
+          // Create all melds to go out
+          for (const meld of goOutMelds) {
+            this.socket.emit('createMeld', { type: meld.type, cardIds: meld.cardIds });
+            await this.sleepAsync(300);
+          }
+
+          // Don't discard - we should have won!
+          this.pendingAction = false;
+          return;
+        }
+
+        // Can't go out yet, try layoffs
+        await this.handleLayoffPhase(updatedState);
+      }
     }
 
     // After melding and layoffs, discard
@@ -588,13 +644,214 @@ class AIPlayer {
     return true;
   }
 
-  findBestMelds(hand, state) {
+  // ===== MELD COMBINATION VALIDATOR (#11) =====
+  // Try all possible meld combinations using backtracking
+  findBestMeldCombination(hand, requirements, aggressive = false) {
+    console.log(`${this.playerName} trying all meld combinations for requirements: ${requirements.sets || 0} sets, ${requirements.runs || 0} runs`);
+
+    // Generate ALL possible sets and runs from hand
+    const allPossibleSets = this.findAllPossibleSets(hand, requirements.setSizes || []);
+    const allPossibleRuns = this.findAllPossibleRuns(hand, requirements.runSizes || []);
+
+    console.log(`${this.playerName} found ${allPossibleSets.length} possible set groups, ${allPossibleRuns.length} possible run groups`);
+
+    // Try to find a valid combination using backtracking
+    const bestCombination = this.backtrackMeldCombination(
+      allPossibleSets,
+      allPossibleRuns,
+      requirements,
+      aggressive
+    );
+
+    if (bestCombination) {
+      console.log(`${this.playerName} FOUND VALID COMBINATION with ${bestCombination.length} melds!`);
+      return bestCombination;
+    }
+
+    console.log(`${this.playerName} could not find valid meld combination`);
+    return [];
+  }
+
+  // Backtracking to find valid meld combination
+  backtrackMeldCombination(possibleSets, possibleRuns, requirements, aggressive) {
+    const totalSetsNeeded = requirements.sets || 0;
+    const totalRunsNeeded = requirements.runs || 0;
+    const setSizes = requirements.setSizes || [];
+    const runSizes = requirements.runSizes || [];
+
+    // Try all combinations of sets
+    const setCombinations = this.generateCombinations(possibleSets, totalSetsNeeded);
+
+    for (const setGroup of setCombinations) {
+      // Check if sets have card conflicts
+      const setCards = new Set();
+      let hasConflict = false;
+
+      for (const set of setGroup) {
+        for (const card of set.cards) {
+          if (setCards.has(card.id)) {
+            hasConflict = true;
+            break;
+          }
+          setCards.add(card.id);
+        }
+        if (hasConflict) break;
+      }
+
+      if (hasConflict) continue;
+
+      // Filter runs that don't conflict with chosen sets
+      const validRuns = possibleRuns.filter(run => {
+        return !run.cards.some(card => setCards.has(card.id));
+      });
+
+      // Try all combinations of runs
+      const runCombinations = this.generateCombinations(validRuns, totalRunsNeeded);
+
+      for (const runGroup of runCombinations) {
+        // Check if runs have card conflicts among themselves
+        const runCards = new Set();
+        let runConflict = false;
+
+        for (const run of runGroup) {
+          for (const card of run.cards) {
+            if (runCards.has(card.id)) {
+              runConflict = true;
+              break;
+            }
+            runCards.add(card.id);
+          }
+          if (runConflict) break;
+        }
+
+        if (runConflict) continue;
+
+        // Found a valid combination!
+        const melds = [];
+
+        // Add sets
+        for (let i = 0; i < setGroup.length; i++) {
+          const set = setGroup[i];
+          const requiredSize = setSizes[i] || 3;
+          const cardsToUse = aggressive ? set.cards : set.cards.slice(0, requiredSize);
+
+          melds.push({
+            type: 'set',
+            cardIds: cardsToUse.map(c => c.id),
+            cards: cardsToUse
+          });
+        }
+
+        // Add runs
+        for (let i = 0; i < runGroup.length; i++) {
+          const run = runGroup[i];
+          const requiredSize = runSizes[i] || 4;
+          const cardsToUse = aggressive ? run.cards : run.cards.slice(0, requiredSize);
+
+          melds.push({
+            type: 'run',
+            cardIds: cardsToUse.map(c => c.id),
+            cards: cardsToUse
+          });
+        }
+
+        return melds;
+      }
+    }
+
+    return null;
+  }
+
+  // Generate all combinations of items (choose k from array)
+  generateCombinations(items, k) {
+    if (k === 0) return [[]];
+    if (items.length === 0) return [];
+    if (items.length < k) return [];
+
+    const result = [];
+
+    const combine = (start, chosen) => {
+      if (chosen.length === k) {
+        result.push([...chosen]);
+        return;
+      }
+
+      for (let i = start; i < items.length; i++) {
+        chosen.push(items[i]);
+        combine(i + 1, chosen);
+        chosen.pop();
+      }
+    };
+
+    combine(0, []);
+    return result;
+  }
+
+  findBestMelds(hand, state, aggressive = false) {
     const melds = [];
     const requirements = this.getRoundRequirements(state.currentRound);
     const usedCards = new Set();
 
-    // Try to find sets first with proper sizes
-    const sets = this.findSetsWithSizes(hand, requirements.setSizes || []);
+    // ===== USE MELD COMBINATION VALIDATOR (#11) =====
+    // Try the new backtracking approach first
+    const validCombination = this.findBestMeldCombination(hand, requirements, aggressive);
+    if (validCombination && validCombination.length > 0) {
+      return validCombination;
+    }
+
+    // Fallback to old greedy approach if backtracking fails
+    console.log(`${this.playerName} backtracking failed, using greedy approach`);
+
+    // ===== WILDCARD HOARDING STRATEGY =====
+    // Try to meet requirements WITHOUT using wildcards first
+    // This preserves wildcards for critical situations (going out, difficult melds)
+    const wildcards = hand.filter(c => c.isWild);
+    const nonWildcardHand = hand.filter(c => !c.isWild);
+
+    let sets = [];
+    let runs = [];
+    let usedWildcards = false;
+
+    // First attempt: Try to find melds without using any wildcards
+    if (wildcards.length > 0) {
+      console.log(`${this.playerName} wildcard hoarding: trying to meet requirements without ${wildcards.length} wildcard(s)`);
+
+      sets = this.findSetsWithSizes(nonWildcardHand, requirements.setSizes || []);
+      const setsFound = sets.length;
+
+      if (setsFound >= (requirements.sets || 0)) {
+        const remainingNonWildCards = nonWildcardHand.filter(c =>
+          !sets.some(set => set.cards.some(sc => sc.id === c.id))
+        );
+        runs = this.findRunsWithSizes(remainingNonWildCards, requirements.runSizes || []);
+
+        const runsFound = runs.length;
+        const totalSetsNeeded = requirements.sets || 0;
+        const totalRunsNeeded = requirements.runs || 0;
+
+        if (setsFound >= totalSetsNeeded && runsFound >= totalRunsNeeded) {
+          console.log(`${this.playerName} SUCCESS: met requirements WITHOUT using wildcards! (Saved ${wildcards.length} wildcard(s))`);
+          // Successfully met requirements without wildcards!
+          // Don't use wildcards at all
+        } else {
+          // Failed without wildcards, need to use them
+          console.log(`${this.playerName} needs wildcards to meet requirements (found ${setsFound}/${totalSetsNeeded} sets, ${runsFound}/${totalRunsNeeded} runs)`);
+          usedWildcards = true;
+        }
+      } else {
+        console.log(`${this.playerName} needs wildcards to meet requirements (found ${setsFound}/${requirements.sets || 0} sets)`);
+        usedWildcards = true;
+      }
+    } else {
+      // No wildcards in hand, proceed normally
+      usedWildcards = true;
+    }
+
+    // Second attempt: If we failed without wildcards, use them
+    if (usedWildcards || wildcards.length === 0) {
+      // Try to find sets first with proper sizes
+      sets = this.findSetsWithSizes(hand, requirements.setSizes || []);
+    }
     let setIndex = 0;
     for (const set of sets) {
       const requiredSize = requirements.setSizes && requirements.setSizes[setIndex]
@@ -602,19 +859,30 @@ class AIPlayer {
         : 3;
 
       if (set.cards.length >= requiredSize) {
-        // Only use the exact number needed for the requirement
+        // In aggressive mode, use ALL cards; otherwise use exact number
+        const cardsToUse = aggressive ? set.cards : set.cards.slice(0, requiredSize);
+
         melds.push({
           type: 'set',
-          cardIds: set.cards.slice(0, requiredSize).map(c => c.id)
+          cardIds: cardsToUse.map(c => c.id)
         });
-        set.cards.slice(0, requiredSize).forEach(c => usedCards.add(c.id));
+        cardsToUse.forEach(c => usedCards.add(c.id));
         setIndex++;
+
+        if (aggressive) {
+          console.log(`${this.playerName} aggressive meld: using ALL ${cardsToUse.length} cards for set (min required: ${requiredSize})`);
+        }
       }
     }
 
     // Try to find runs with proper sizes
     const remainingCards = hand.filter(c => !usedCards.has(c.id));
-    const runs = this.findRunsWithSizes(remainingCards, requirements.runSizes || []);
+
+    // Only recalculate runs if we're using wildcards (or had no wildcards)
+    if (usedWildcards || wildcards.length === 0) {
+      runs = this.findRunsWithSizes(remainingCards, requirements.runSizes || []);
+    }
+    // Otherwise, we already calculated runs without wildcards above
 
     let runIndex = 0;
     for (const run of runs) {
@@ -623,12 +891,19 @@ class AIPlayer {
         : 4;
 
       if (run.cards.length >= requiredSize) {
-        // Only use the exact number needed for the requirement
+        // In aggressive mode, use ALL cards; otherwise use exact number
+        const cardsToUse = aggressive ? run.cards : run.cards.slice(0, requiredSize);
+
         melds.push({
           type: 'run',
-          cardIds: run.cards.slice(0, requiredSize).map(c => c.id)
+          cardIds: cardsToUse.map(c => c.id)
         });
+        cardsToUse.forEach(c => usedCards.add(c.id));
         runIndex++;
+
+        if (aggressive) {
+          console.log(`${this.playerName} aggressive meld: using ALL ${cardsToUse.length} cards for run (min required: ${requiredSize})`);
+        }
       }
     }
 
@@ -1098,6 +1373,145 @@ class AIPlayer {
     return 5;
   }
 
+  // ===== FLEXIBLE MELD PLANNING (#7) =====
+  // Find ALL possible sets (not just greedy first choice)
+  findAllPossibleSets(hand, setSizes) {
+    const wildcards = hand.filter(c => c.isWild);
+    const nonWildCards = hand.filter(c => !c.isWild);
+
+    // Group by rank
+    const rankGroups = {};
+    for (const card of nonWildCards) {
+      if (!rankGroups[card.rank]) {
+        rankGroups[card.rank] = [];
+      }
+      rankGroups[card.rank].push(card);
+    }
+
+    const allSets = [];
+
+    // For each required set size, find all possible sets of that size
+    for (const requiredSize of setSizes) {
+      // Try each rank group
+      for (const rank in rankGroups) {
+        const cards = rankGroups[rank];
+        const naturalCards = cards.length;
+        const wildsNeeded = Math.max(0, requiredSize - naturalCards);
+
+        // Can we make a set of this size from this rank?
+        if (naturalCards + wildcards.length >= requiredSize && wildsNeeded <= wildcards.length) {
+          // Create the set
+          const setCards = [...cards];
+
+          // Add wildcards if needed
+          for (let i = 0; i < wildsNeeded && i < wildcards.length; i++) {
+            setCards.push(wildcards[i]);
+          }
+
+          if (setCards.length >= requiredSize) {
+            allSets.push({
+              cards: setCards,
+              minSize: requiredSize,
+              rank: rank,
+              wildsUsed: wildsNeeded
+            });
+          }
+        }
+      }
+    }
+
+    return allSets;
+  }
+
+  // Find ALL possible runs (not just greedy first choice)
+  findAllPossibleRuns(hand, runSizes) {
+    const wildcards = hand.filter(c => c.isWild);
+    const nonWildCards = hand.filter(c => !c.isWild);
+
+    // Group by suit
+    const suitGroups = {};
+    for (const card of nonWildCards) {
+      if (!suitGroups[card.suit]) {
+        suitGroups[card.suit] = [];
+      }
+      suitGroups[card.suit].push(card);
+    }
+
+    const allRuns = [];
+
+    // For each required run size, find all possible runs of that size
+    for (const requiredSize of runSizes) {
+      // Try each suit
+      for (const suit in suitGroups) {
+        const cards = suitGroups[suit];
+
+        // Sort by value
+        const sorted = cards.sort((a, b) => {
+          const aVal = this.getCardValue(a);
+          const bVal = this.getCardValue(b);
+          return aVal - bVal;
+        });
+
+        // Try all possible starting positions for runs
+        for (let start = 0; start < sorted.length; start++) {
+          // Try to build a run starting from this card
+          const run = this.tryBuildRunOfSize(sorted, start, requiredSize, wildcards);
+
+          if (run && run.cards.length >= requiredSize) {
+            allRuns.push({
+              cards: run.cards,
+              minSize: requiredSize,
+              suit: suit,
+              wildsUsed: run.wildsUsed
+            });
+          }
+        }
+      }
+    }
+
+    return allRuns;
+  }
+
+  // Try to build a run of specific size starting from a position
+  tryBuildRunOfSize(sortedCards, startIdx, targetSize, availableWilds) {
+    if (startIdx >= sortedCards.length) return null;
+
+    const runCards = [sortedCards[startIdx]];
+    let currentValue = this.getCardValue(sortedCards[startIdx]);
+    let wildsUsed = 0;
+    let nextIdx = startIdx + 1;
+
+    while (runCards.length < targetSize) {
+      const nextValue = currentValue + 1;
+
+      // Check if we've reached the limit (K is highest non-Ace)
+      if (nextValue > 13) break;
+
+      // Do we have a natural card for this value?
+      if (nextIdx < sortedCards.length && this.getCardValue(sortedCards[nextIdx]) === nextValue) {
+        runCards.push(sortedCards[nextIdx]);
+        currentValue = nextValue;
+        nextIdx++;
+      }
+      // Can we use a wildcard?
+      else if (wildsUsed < availableWilds.length) {
+        runCards.push(availableWilds[wildsUsed]);
+        wildsUsed++;
+        currentValue = nextValue;
+      }
+      // Can't continue
+      else {
+        break;
+      }
+    }
+
+    if (runCards.length >= targetSize) {
+      return { cards: runCards, wildsUsed };
+    }
+
+    return null;
+  }
+
   getRoundRequirements(round) {
     const requirements = [
       { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [] },
@@ -1113,6 +1527,193 @@ class AIPlayer {
     ];
 
     return requirements[round] || requirements[0];
+  }
+
+  // ===== GO OUT DETECTION =====
+
+  // Find meld combinations that use ALL cards to go out
+  findGoOutMelds(hand, state) {
+    if (hand.length === 0) return [];
+
+    console.log(`${this.playerName} checking if can go out with ${hand.length} cards`);
+
+    // Try to find any valid combination of melds that uses ALL cards
+    const allMelds = this.findAllPossibleMelds(hand);
+
+    if (allMelds.length === 0) {
+      return null; // Cannot go out
+    }
+
+    // Find combination that uses all cards
+    const goOutCombination = this.findMeldCombinationUsingAllCards(hand, allMelds);
+
+    if (goOutCombination) {
+      console.log(`${this.playerName} CAN GO OUT! Found ${goOutCombination.length} melds using all ${hand.length} cards`);
+      return goOutCombination;
+    }
+
+    return null;
+  }
+
+  // Find ALL possible melds (sets and runs) in hand, not just minimum requirements
+  findAllPossibleMelds(hand) {
+    const possibleMelds = [];
+
+    // Find all possible sets (3+ of same rank)
+    const rankGroups = {};
+    const wildcards = hand.filter(c => c.isWild);
+
+    for (const card of hand) {
+      if (card.isWild) continue;
+      if (!rankGroups[card.rank]) {
+        rankGroups[card.rank] = [];
+      }
+      rankGroups[card.rank].push(card);
+    }
+
+    // Add sets of various sizes (3, 4, 5, etc.)
+    for (const rank in rankGroups) {
+      const cards = rankGroups[rank];
+
+      // Try sets of size 3, 4, 5+ with and without wildcards
+      for (let size = 3; size <= cards.length + wildcards.length; size++) {
+        if (cards.length >= size) {
+          // Natural set
+          possibleMelds.push({
+            type: 'set',
+            cards: cards.slice(0, size),
+            cardIds: cards.slice(0, size).map(c => c.id)
+          });
+        } else if (cards.length + wildcards.length >= size) {
+          // Set with wildcards
+          const wildsNeeded = size - cards.length;
+          if (wildsNeeded <= wildcards.length) {
+            possibleMelds.push({
+              type: 'set',
+              cards: [...cards, ...wildcards.slice(0, wildsNeeded)],
+              cardIds: [...cards, ...wildcards.slice(0, wildsNeeded)].map(c => c.id)
+            });
+          }
+        }
+      }
+    }
+
+    // Find all possible runs (4+ cards in sequence)
+    const suitGroups = {};
+    for (const card of hand) {
+      if (card.isWild) continue;
+      if (!suitGroups[card.suit]) {
+        suitGroups[card.suit] = [];
+      }
+      suitGroups[card.suit].push(card);
+    }
+
+    for (const suit in suitGroups) {
+      const cards = suitGroups[suit].sort((a, b) => this.getCardValue(a) - this.getCardValue(b));
+
+      // Find all runs in this suit (with and without wildcards)
+      const runs = this.findAllRunsInSuit(cards, wildcards);
+      possibleMelds.push(...runs);
+    }
+
+    return possibleMelds;
+  }
+
+  // Find all possible runs in a suit
+  findAllRunsInSuit(sortedCards, availableWilds) {
+    const runs = [];
+
+    // Try starting from each card
+    for (let start = 0; start < sortedCards.length; start++) {
+      // Try runs of various lengths
+      for (let end = start + 1; end <= sortedCards.length; end++) {
+        const subset = sortedCards.slice(start, end);
+        const run = this.tryBuildRun(subset, [...availableWilds]);
+
+        if (run && run.length >= 4) {
+          runs.push({
+            type: 'run',
+            cards: run,
+            cardIds: run.map(c => c.id)
+          });
+        }
+      }
+    }
+
+    return runs;
+  }
+
+  // Try to build a run from cards, using wildcards to fill gaps
+  tryBuildRun(cards, availableWilds) {
+    if (cards.length === 0) return null;
+
+    const result = [cards[0]];
+    let expectedNextValue = this.getCardValue(cards[0]) + 1;
+
+    for (let i = 1; i < cards.length; i++) {
+      const cardValue = this.getCardValue(cards[i]);
+
+      // Fill gaps with wildcards
+      while (expectedNextValue < cardValue && availableWilds.length > 0) {
+        result.push(availableWilds.shift());
+        expectedNextValue++;
+      }
+
+      if (cardValue === expectedNextValue) {
+        result.push(cards[i]);
+        expectedNextValue = cardValue + 1;
+      } else if (cardValue > expectedNextValue) {
+        // Gap too large, can't continue
+        break;
+      }
+      // Skip duplicates
+    }
+
+    return result.length >= 4 ? result : null;
+  }
+
+  // Find a combination of melds that uses all cards
+  findMeldCombinationUsingAllCards(hand, possibleMelds) {
+    // Use backtracking to find a valid combination
+    const usedCards = new Set();
+    const selectedMelds = [];
+
+    const backtrack = (meldIndex) => {
+      // Check if all cards are used
+      if (usedCards.size === hand.length) {
+        return true; // Found a valid combination!
+      }
+
+      // Try remaining melds
+      for (let i = meldIndex; i < possibleMelds.length; i++) {
+        const meld = possibleMelds[i];
+
+        // Check if any card in this meld is already used
+        const hasConflict = meld.cards.some(c => usedCards.has(c.id));
+        if (hasConflict) continue;
+
+        // Try using this meld
+        meld.cards.forEach(c => usedCards.add(c.id));
+        selectedMelds.push(meld);
+
+        // Recurse
+        if (backtrack(i + 1)) {
+          return true;
+        }
+
+        // Backtrack
+        meld.cards.forEach(c => usedCards.delete(c.id));
+        selectedMelds.pop();
+      }
+
+      return false;
+    };
+
+    if (backtrack(0)) {
+      return selectedMelds;
+    }
+
+    return null;
   }
 
   // ===== OPPONENT TRACKING METHODS =====
@@ -1266,12 +1867,48 @@ class AIPlayer {
   }
 
   // Calculate potential value of a card (how close it is to forming melds)
+  // ===== CARD VERSATILITY SCORING (#8) =====
+  calculateCardVersatility(card) {
+    if (card.isWild) return 50; // Wildcards are maximally versatile
+
+    const value = this.getCardValue(card);
+
+    // Middle cards (6,7,8,9) can fit in the most runs
+    // They have 9-10 potential run positions
+    if (value >= 6 && value <= 9) {
+      return 30; // High versatility
+    }
+
+    // Cards 4,5,10,J have good versatility (7-8 positions)
+    if (value >= 4 && value <= 5) {
+      return 20; // Good versatility
+    }
+    if (value >= 10 && value <= 11) {
+      return 20; // Good versatility
+    }
+
+    // Edge cards (A,2,3,Q,K) have limited versatility (3-6 positions)
+    if (value >= 1 && value <= 3) {
+      return 5; // Low versatility - prefer to discard
+    }
+    if (value >= 12 && value <= 13) {
+      return 5; // Low versatility - prefer to discard
+    }
+
+    return 10; // Default
+  }
+
   calculateCardPotential(card, hand, state) {
     if (card.isWild) {
       return 100; // Wildcards have max potential
     }
 
     let potential = 0;
+
+    // ===== CARD VERSATILITY SCORING (#8) =====
+    // Add versatility bonus - middle cards are more valuable
+    const versatility = this.calculateCardVersatility(card);
+    potential += versatility;
 
     // Check set potential (cards of same rank)
     const sameRankCards = hand.filter(c => c.rank === card.rank && !c.isWild && c.id !== card.id);
@@ -1314,26 +1951,202 @@ class AIPlayer {
   }
 
   // Calculate efficiency score: lower is better to discard (high points, low potential)
+  // ===== TURN ORDER AWARENESS AND RISK ASSESSMENT =====
+  // Assess how threatening an opponent is (0-100 scale)
+  assessOpponentThreat(opponent, state) {
+    if (!opponent) return 0;
+
+    let threat = 0;
+
+    // Factor 1: Hand size (fewer cards = higher threat)
+    const handSize = opponent.handSize || 10;
+    if (handSize <= 2) {
+      threat += 80; // EXTREME threat - about to win
+    } else if (handSize <= 4) {
+      threat += 50; // High threat
+    } else if (handSize <= 6) {
+      threat += 25; // Medium threat
+    } else {
+      threat += 5; // Low threat
+    }
+
+    // Factor 2: Has met requirements? (much more threatening)
+    if (opponent.hasMetRequirements) {
+      threat += 30;
+    }
+
+    // Factor 3: Number of melds (more melds = closer to winning)
+    const meldCount = opponent.melds ? opponent.melds.length : 0;
+    threat += meldCount * 5;
+
+    return Math.min(100, threat);
+  }
+
+  // Get the next player in turn order
+  getNextPlayer(state) {
+    if (!state.players || state.players.length === 0) return null;
+
+    const currentIndex = state.currentPlayerIndex;
+    const nextIndex = (currentIndex + 1) % state.players.length;
+
+    return state.players[nextIndex];
+  }
+
+  // Calculate urgency to win based on opponent threats
+  calculateWinUrgency(state) {
+    const opponents = state.players.filter(p => !p.isMe);
+    if (opponents.length === 0) return 0;
+
+    let maxThreat = 0;
+    let nextPlayerThreat = 0;
+
+    // Get next player (most critical)
+    const nextPlayer = this.getNextPlayer(state);
+    if (nextPlayer && !nextPlayer.isMe) {
+      nextPlayerThreat = this.assessOpponentThreat(nextPlayer, state);
+    }
+
+    // Check all opponents
+    for (const opponent of opponents) {
+      const threat = this.assessOpponentThreat(opponent, state);
+      maxThreat = Math.max(maxThreat, threat);
+    }
+
+    // Next player threat is 1.5x more important (they go before us)
+    const urgency = Math.max(nextPlayerThreat * 1.5, maxThreat);
+
+    if (urgency > 60) {
+      console.log(`${this.playerName} URGENT: Next player threat=${nextPlayerThreat.toFixed(0)}, Max opponent threat=${maxThreat.toFixed(0)}`);
+    }
+
+    return urgency;
+  }
+
+  // ===== ONE-TURN VICTORY PROBABILITY =====
+  // Calculate which cards would allow us to go out on the next draw
+  calculateOneDrawVictoryCards(hand, state) {
+    // Only relevant if we've met requirements
+    if (!state.hasMetRequirements) {
+      return [];
+    }
+
+    const winningCards = [];
+    const allRanks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+    const allSuits = ['♠', '♥', '♦', '♣'];
+
+    // Test each possible card we could draw
+    for (const rank of allRanks) {
+      for (const suit of allSuits) {
+        // Create hypothetical card
+        const hypotheticalCard = {
+          id: 'test-' + rank + suit,
+          rank: rank,
+          suit: suit,
+          isWild: false
+        };
+
+        // Simulate adding this card to our hand
+        const testHand = [...hand, hypotheticalCard];
+
+        // Check if we could go out with this hand
+        const goOutMelds = this.findGoOutMelds(testHand, state);
+
+        if (goOutMelds && goOutMelds.length > 0) {
+          winningCards.push({ rank, suit });
+        }
+      }
+    }
+
+    if (winningCards.length > 0) {
+      console.log(`${this.playerName} can win next turn by drawing: ${winningCards.map(c => c.rank + c.suit).join(', ')} (${winningCards.length} cards)`);
+    }
+
+    return winningCards;
+  }
+
+  // Check if a card is critical for a potential one-turn victory
+  isCardCriticalForVictory(card, hand, state, winningCards) {
+    // If we can't win next turn, nothing is critical
+    if (winningCards.length === 0) {
+      return false;
+    }
+
+    // Simulate discarding this card
+    const handWithoutCard = hand.filter(c => c.id !== card.id);
+
+    // Recalculate winning cards without this card
+    const newWinningCards = this.calculateOneDrawVictoryCards(handWithoutCard, state);
+
+    // If we lose winning opportunities by discarding this card, it's critical
+    const lostOpportunities = winningCards.length - newWinningCards.length;
+
+    if (lostOpportunities > 0) {
+      console.log(`${this.playerName} CRITICAL: discarding ${card.rank}${card.suit} would lose ${lostOpportunities} winning opportunities!`);
+      return true;
+    }
+
+    return false;
+  }
+
   calculateDiscardScore(card, hand, state, opponents) {
     const points = this.getCardPoints(card);
     const potential = this.calculateCardPotential(card, hand, state);
 
-    // Check if it helps any opponent
+    // TURN ORDER AWARENESS - Check if next player or any opponent would benefit
     let helpsOpponent = false;
+    let helpsNextPlayer = false;
+    const nextPlayer = this.getNextPlayer(state);
+
     for (const opponent of opponents) {
       if (this.wouldHelpOpponentAdvanced(card, opponent)) {
         helpsOpponent = true;
+
+        // Check if this is the next player specifically
+        if (nextPlayer && opponent.id === nextPlayer.id) {
+          helpsNextPlayer = true;
+        }
         break;
       }
     }
+
+    // Calculate overall game urgency based on opponent threats
+    const winUrgency = this.calculateWinUrgency(state);
+    const nextPlayerThreat = nextPlayer ? this.assessOpponentThreat(nextPlayer, state) : 0;
+
+    // ONE-TURN VICTORY PROBABILITY CHECK
+    // Calculate which cards would let us win next turn
+    const winningCards = this.calculateOneDrawVictoryCards(hand, state);
+    const isCriticalForVictory = this.isCardCriticalForVictory(card, hand, state, winningCards);
 
     // Score formula: want to discard high-point, low-potential cards that don't help opponents
     // Lower score = better to discard
     let score = potential - points;
 
-    // Heavy penalty if it helps an opponent (we want to AVOID discarding these)
-    if (helpsOpponent) {
-      score += 200; // Make it much less likely to discard
+    // TURN ORDER AWARENESS PENALTIES
+    // Heavy penalty if it helps the NEXT player (they go before us!)
+    if (helpsNextPlayer) {
+      const nextPlayerPenalty = 250 + (nextPlayerThreat * 3); // Scale with their threat level
+      score += nextPlayerPenalty;
+      console.log(`${this.playerName} TURN ORDER: ${card.rank}${card.suit} would help NEXT player (threat=${nextPlayerThreat.toFixed(0)}, penalty=+${nextPlayerPenalty.toFixed(0)})`);
+    } else if (helpsOpponent) {
+      // Penalty for helping any opponent (less severe than next player)
+      score += 200;
+    }
+
+    // Increase defensive play when ANY opponent is threatening
+    if (winUrgency > 60 && helpsOpponent) {
+      const urgencyPenalty = (winUrgency - 60) * 5; // Extra penalty based on urgency
+      score += urgencyPenalty;
+      console.log(`${this.playerName} DEFENSIVE: High urgency (${winUrgency.toFixed(0)}), avoiding helpful discard (penalty=+${urgencyPenalty.toFixed(0)})`);
+    }
+
+    // MASSIVE penalty if this card is critical for a one-turn victory
+    if (isCriticalForVictory) {
+      score += 500; // Highest priority - never discard victory-enabling cards
+      console.log(`${this.playerName} heavily penalizing ${card.rank}${card.suit} (critical for victory, score +500)`);
+    } else if (winningCards.length > 0) {
+      // Even if not critical, we're close to winning, so be more conservative
+      score += 50; // Slight penalty to prefer keeping cards when close to victory
     }
 
     return score;

@@ -2,6 +2,34 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [Phase 5] - 2025-12-06
+
+### Added - Interactive Tutorial System
+- **Tutorial Mode**: Complete interactive tutorial for new players
+- **Step-by-Step Guide**: 14-step tutorial covering all game mechanics
+- **Auto-Start Tutorial**: Tutorial mode now starts immediately without lobby/room sharing
+- **Visual Spotlight**: Highlighted elements with blue glow to guide players
+- **Progress Tracking**: Clear indication of tutorial progress and completion
+
+### Tutorial Improvements
+- **Better Visibility**: Removed dark overlay, buttons now fully visible and clickable
+- **Action Prevention**: Prevents out-of-order actions (e.g., drawing before step 5)
+- **Exit Functionality**: "Play Real Game" button properly returns to join screen
+- **Enhanced Spotlight**: Bright blue border with glow effect instead of blocking overlay
+- **Auto-Advancement**: Tutorial automatically advances when actions are completed
+
+### Bug Fixes
+- **Server Callback**: Fixed createMeld callback to properly advance tutorial steps
+- **Spotlight Positioning**: Dynamic element detection using getBoundingClientRect()
+- **Tutorial Flow**: Removed AI turn steps that caused tutorial to hang
+- **Socket Reconnection**: Fixed skipTutorial to properly reconnect socket
+
+### Technical Changes
+- Tutorial configuration with 14 distinct steps
+- Dynamic tutorial box positioning (top/bottom based on spotlight target)
+- Step validation and action allowance system
+- Tutorial state management with React hooks
+
 ## [Phase 4] - 2025-01-17
 
 ### Added - AI Opponents
