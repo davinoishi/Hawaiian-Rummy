@@ -50,7 +50,9 @@ All the players need to be on the same LAN and access the game via HTTP://<IP_ad
 
 ## Setup using noBGP (uses LLM to install and deploy the game)
 Requirements: a Linux machine to install noBGP agent (this will also be the host server for the game), a free noBGP account, an account with an LLM agent (ChatGPT, Claude)
-   - For ChatGPT, free accounts can use our custom GPT, piGPT. For users with paid accounts, you can use the custom GPT or add our MCP server to your agent
+   - For ChatGPT,
+     - Free accounts can use our custom GPT, [piGPT](https://chatgpt.com/g/g-69055d82e7e08191a15cc07894808c21-pi-gpt)
+     - For users with paid accounts, you can use the custom GPT or add our MCP server to your agent
    - For Claude, you will need a paid account to connect the noBGP MCP server to your agent
    - More details and instructions on using either the custom GPT or the MCP server https://docs.nobgp.com
 1. Once you have created a noBGP account via your LLM, you will be able to get a registration/installation code from your LLM. Just ask the LLM to provide the one-line code for your device
