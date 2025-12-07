@@ -1254,13 +1254,17 @@ class AIPlayer {
     const myId = state.players.find(p => p.isMe)?.id;
     const opponents = state.players.filter(p => p.id !== myId);
 
+    // PERFORMANCE FIX: Calculate winning cards ONCE instead of for each card evaluation
+    // This prevents 624+ calls to expensive findGoOutMelds function
+    const winningCards = this.calculateOneDrawVictoryCards(hand, state);
+
     // Use advanced discard scoring: lower score = better to discard
     // Score considers: card potential, points, and opponent needs
     let bestCard = nonWildCards[0];
     let bestScore = Infinity;
 
     for (const card of nonWildCards) {
-      const score = this.calculateDiscardScore(card, hand, state, opponents);
+      const score = this.calculateDiscardScore(card, hand, state, opponents, winningCards);
 
       console.log(`${this.playerName} discard analysis: ${card.rank}${card.suit} score=${score.toFixed(1)}`);
 
@@ -2088,7 +2092,7 @@ class AIPlayer {
     return false;
   }
 
-  calculateDiscardScore(card, hand, state, opponents) {
+  calculateDiscardScore(card, hand, state, opponents, winningCards) {
     const points = this.getCardPoints(card);
     const potential = this.calculateCardPotential(card, hand, state);
 
@@ -2114,8 +2118,8 @@ class AIPlayer {
     const nextPlayerThreat = nextPlayer ? this.assessOpponentThreat(nextPlayer, state) : 0;
 
     // ONE-TURN VICTORY PROBABILITY CHECK
-    // Calculate which cards would let us win next turn
-    const winningCards = this.calculateOneDrawVictoryCards(hand, state);
+    // winningCards is now passed as a parameter (calculated once per discard decision)
+    // This prevents expensive recalculation for each card being evaluated
     const isCriticalForVictory = this.isCardCriticalForVictory(card, hand, state, winningCards);
 
     // Score formula: want to discard high-point, low-potential cards that don't help opponents
