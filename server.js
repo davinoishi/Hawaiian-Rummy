@@ -67,10 +67,6 @@ function getAnalyticsSummary() {
 }
 
 const app = express();
-
-// Sentry request handler must be the first middleware
-app.use(Sentry.Handlers.requestHandler());
-
 app.use(cors());
 
 // Analytics middleware - log all page requests
@@ -92,9 +88,6 @@ app.get('/api/analytics', (req, res) => {
 });
 
 app.use(express.static('public'));
-
-// Sentry error handler must be before other error middleware and after all controllers
-app.use(Sentry.Handlers.errorHandler());
 
 const server = http.createServer(app);
 const io = socketIo(server, {
