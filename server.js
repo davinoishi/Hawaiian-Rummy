@@ -1,3 +1,13 @@
+// ===== SENTRY ERROR TRACKING =====
+// Initialize Sentry first, before any other code
+const Sentry = require('@sentry/node');
+
+Sentry.init({
+  dsn: "https://1abc107799876c740efe73f8c145cbce@o4510496207929344.ingest.us.sentry.io/4510496214745088",
+  environment: process.env.NODE_ENV || "production",
+  tracesSampleRate: 1.0,
+});
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -57,6 +67,10 @@ function getAnalyticsSummary() {
 }
 
 const app = express();
+
+// Sentry request handler must be the first middleware
+app.use(Sentry.Handlers.requestHandler());
+
 app.use(cors());
 
 // Analytics middleware - log all page requests
@@ -78,6 +92,9 @@ app.get('/api/analytics', (req, res) => {
 });
 
 app.use(express.static('public'));
+
+// Sentry error handler must be before other error middleware and after all controllers
+app.use(Sentry.Handlers.errorHandler());
 
 const server = http.createServer(app);
 const io = socketIo(server, {
