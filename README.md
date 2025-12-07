@@ -2,6 +2,9 @@
 
 This is a version of Rummy I played as a kid with my family. Since its rules are unique, I had to build the game from scratch. This is altogether vibe coded with Claude Code. It's a simple web app. The instructions to install manually or via noBGP are below.
 
+<img width="1024" height="1024" alt="hawaiian-rummy-logo" src="https://github.com/user-attachments/assets/be1f695c-bbb1-498e-9311-41e04a9dad60" />
+
+
 ## Features
 
 ### Game Mechanics
