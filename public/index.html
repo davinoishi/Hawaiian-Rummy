@@ -9,6 +9,14 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=2">
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="HI Rummy">
+
     <script src="/socket.io/socket.io.js"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -245,6 +253,34 @@
           padding: 0.5rem !important;
           margin-bottom: 0.25rem !important;
         }
+
+        /* How to Play Modal - mobile optimizations */
+        .bg-white.rounded-lg.shadow-2xl h2 {
+          font-size: 1.125rem !important; /* text-lg instead of text-2xl */
+        }
+
+        .bg-white.rounded-lg.shadow-2xl h3 {
+          font-size: 1rem !important; /* text-base instead of text-xl */
+        }
+
+        .bg-white.rounded-lg.shadow-2xl table {
+          font-size: 0.65rem !important; /* text-xs instead of text-sm */
+        }
+
+        .bg-white.rounded-lg.shadow-2xl p,
+        .bg-white.rounded-lg.shadow-2xl li {
+          font-size: 0.875rem !important; /* text-sm */
+        }
+
+        /* Add scroll indicator for horizontal-scrolling table */
+        .overflow-x-auto::after {
+          content: "← Swipe to scroll →";
+          display: block;
+          text-align: center;
+          font-size: 0.65rem;
+          color: #6b7280;
+          margin-top: 0.25rem;
+        }
       }
 
       /* Touch-friendly buttons - increase touch targets */
@@ -383,6 +419,98 @@
         animation: pulse 2s infinite;
         position: relative;
         z-index: 45;
+      }
+
+      /* Ripple effect for touch feedback */
+      .ripple-container {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .ripple {
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.6);
+        transform: scale(0);
+        animation: ripple-animation 0.6s ease-out;
+        pointer-events: none;
+      }
+
+      @keyframes ripple-animation {
+        to {
+          transform: scale(4);
+          opacity: 0;
+        }
+      }
+
+      /* Enhanced button press states */
+      button:active {
+        transform: scale(0.96);
+        transition: transform 0.1s ease;
+      }
+
+      /* Loading spinner */
+      .spinner {
+        border: 3px solid #f3f4f6;
+        border-top: 3px solid #3b82f6;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+
+      /* Connection status indicator */
+      .connection-status {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.95);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        font-size: 0.875rem;
+        font-weight: 500;
+        z-index: 1000;
+        transition: all 0.3s ease;
+      }
+
+      .connection-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        animation: pulse-dot 2s ease-in-out infinite;
+      }
+
+      .connection-dot.connected {
+        background-color: #10b981;
+      }
+
+      .connection-dot.connecting {
+        background-color: #f59e0b;
+      }
+
+      .connection-dot.disconnected {
+        background-color: #ef4444;
+        animation: none;
+      }
+
+      @keyframes pulse-dot {
+        0%, 100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.7;
+          transform: scale(1.1);
+        }
       }
 
       @keyframes cardDeal {
@@ -788,6 +916,10 @@
           const [dragOverDiscard, setDragOverDiscard] = useState(false); // Highlight discard pile when dragging over
           const [dragOverMeld, setDragOverMeld] = useState(null); // { playerId, meldIndex } when dragging over a meld
 
+          // Network/loading state
+          const [connectionStatus, setConnectionStatus] = useState('connecting'); // connecting, connected, disconnected
+          const [isLoading, setIsLoading] = useState(false); // General loading state for operations
+
           const roundRequirements = [
             { sets: 2, setSizes: [3, 3], runs: 0, runSizes: [], description: "2 sets of 3" },
             { sets: 1, setSizes: [3], runs: 1, runSizes: [4], description: "1 set of 3 and a run of 4" },
@@ -930,6 +1062,54 @@
           };
 
           // Mobile utility functions
+
+          // Haptic feedback for touch interactions
+          const triggerHaptic = (intensity = 'medium') => {
+            if ('vibrate' in navigator) {
+              switch(intensity) {
+                case 'light':
+                  navigator.vibrate(10);
+                  break;
+                case 'medium':
+                  navigator.vibrate(20);
+                  break;
+                case 'strong':
+                  navigator.vibrate(50);
+                  break;
+                default:
+                  navigator.vibrate(20);
+              }
+            }
+          };
+
+          // Create ripple effect for touch feedback
+          const createRipple = (event) => {
+            const button = event.currentTarget;
+
+            // Don't create ripple if button doesn't have ripple-container class
+            if (!button.classList.contains('ripple-container')) {
+              button.classList.add('ripple-container');
+            }
+
+            const ripple = document.createElement('span');
+            ripple.classList.add('ripple');
+
+            const rect = button.getBoundingClientRect();
+            const size = Math.max(rect.width, rect.height);
+            const x = event.clientX - rect.left - size / 2;
+            const y = event.clientY - rect.top - size / 2;
+
+            ripple.style.width = ripple.style.height = size + 'px';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+
+            button.appendChild(ripple);
+
+            // Remove ripple after animation completes
+            setTimeout(() => {
+              ripple.remove();
+            }, 600);
+          };
 
           // Card zoom handler - tap to enlarge card
           const handleCardTap = (card) => {
@@ -1102,6 +1282,30 @@
             const newSocket = io();
             setSocket(newSocket);
 
+            // Track connection status
+            newSocket.on('connect', () => {
+              setConnectionStatus('connected');
+              console.log('Socket connected');
+            });
+
+            newSocket.on('disconnect', () => {
+              setConnectionStatus('disconnected');
+              console.log('Socket disconnected');
+            });
+
+            newSocket.on('reconnect', () => {
+              setConnectionStatus('connected');
+              console.log('Socket reconnected');
+            });
+
+            newSocket.on('connect_error', (error) => {
+              setConnectionStatus('disconnected');
+              console.error('Connection error:', error);
+            });
+
+            // Mark as connected once socket is initialized
+            setConnectionStatus('connected');
+
             newSocket.on('lobbyUpdate', (data) => {
               setLobbyPlayers(data.players);
               if (data.gameStarted) {
@@ -1245,6 +1449,20 @@
               }
             }
           }, [gameState?.myHand]);
+
+          // Attach ripple effect to all buttons for touch feedback
+          useEffect(() => {
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach(button => {
+              button.addEventListener('click', createRipple);
+            });
+
+            return () => {
+              buttons.forEach(button => {
+                button.removeEventListener('click', createRipple);
+              });
+            };
+          }, [gamePhase, gameState]); // Re-attach when game phase or state changes
 
           // Trigger confetti on round summary
           useEffect(() => {
@@ -1392,6 +1610,7 @@
               return;
             }
             playSound('meld'); // Play meld sound
+            triggerHaptic('medium'); // Haptic feedback for meld
             console.log(`[Tutorial] createMeld called, tutorialActive=${tutorialActive}, tutorialStep=${tutorialStep}`);
             socket.emit('createMeld', { type, cardIds: selectedCards }, (response) => {
               console.log(`[Tutorial] createMeld response:`, response);
@@ -1630,6 +1849,10 @@
                 ? prev.filter(id => id !== cardId)
                 : [...prev, cardId];
               console.log('Card selection updated:', newSelection);
+
+              // Haptic feedback on selection
+              triggerHaptic('light');
+
               return newSelection;
             });
           };
@@ -2484,6 +2707,17 @@
             return (
               <>
                 <HowToPlayModal />
+
+                {/* Connection Status Indicator */}
+                <div className="connection-status">
+                  <div className={`connection-dot ${connectionStatus}`}></div>
+                  <span style={{textTransform: 'capitalize'}}>
+                    {connectionStatus === 'connected' ? 'Connected' :
+                     connectionStatus === 'connecting' ? 'Connecting...' :
+                     'Disconnected'}
+                  </span>
+                </div>
+
                 <div className="min-h-screen relative overflow-hidden">
                   {/* Sunset Background */}
                   <div className="absolute inset-0" style={{
