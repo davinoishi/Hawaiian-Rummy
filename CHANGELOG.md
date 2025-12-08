@@ -2,6 +2,21 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [Phase 5] - 2025-12-07
+
+### Mobile UX Improvements
+- **Card Selection**: Changed from double-tap to single-tap for easier card selection
+- **Drag Threshold**: Increased drag threshold from 15px to 30px to prevent accidental drags when tapping cards
+- **Card Spacing**: Increased spacing between cards (gap-3 instead of gap-1) for better touch targets and reduced accidental touches
+- **Haptic Feedback**: Added vibration feedback for card selection (20ms) and reordering (50ms)
+- **Round Goal Position**: Moved round goal display to just above player scores for less visual prominence
+- **Landscape Layout**: Fixed horizontal phone mode to use same vertical layout as portrait mode instead of cramped desktop layout
+
+### Bug Fixes
+- **Stuck Drag Mode**: Fixed cards getting stuck in drag mode by ensuring drag state is always reset
+- **AI Turn Hang**: Reduced AI decision delay from 3000ms to 1500ms
+- **AI Buy Processing**: Added retry logic when AI can't draw due to pending buy requests
+
 ## [Phase 5] - 2025-12-06
 
 ### Added - Interactive Tutorial System
