@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hawaiian Rummy</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=4">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=4">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=4">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=4">
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=4">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=5">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=5">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=5">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=5">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=5">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -146,49 +146,49 @@
           min-height: 44px !important;
         }
 
-        /* Priority 2: Larger cards on mobile for better readability */
+        /* Priority 2: Hand cards sized same as meld cards */
         .card-mobile {
-          width: 6rem !important;
-          height: 8rem !important;
-          padding: 0.75rem !important;
+          width: 3.5rem !important;
+          height: 5rem !important;
+          padding: 0.375rem !important;
           display: flex !important;
           flex-direction: column !important;
           justify-content: space-between !important;
           align-items: center !important;
         }
 
-        /* Priority 2: Larger text inside cards for better readability */
+        /* Priority 2: Text sized for 3.5rem x 5rem cards */
         .card-mobile .rank-text {
-          font-size: 1.875rem !important;
+          font-size: 1rem !important;
           margin-bottom: 0 !important;
           line-height: 1 !important;
         }
 
         .card-mobile .suit-text {
-          font-size: 1.5rem !important;
+          font-size: 0.875rem !important;
           position: relative !important;
           bottom: auto !important;
           line-height: 1 !important;
         }
 
-        /* Priority 2: Larger WILD indicator text for bigger cards */
+        /* Priority 2: WILD indicator text sized for 3.5rem x 5rem cards */
         .card-mobile .wild-indicator {
           position: relative !important;
-          font-size: 0.875rem !important;
+          font-size: 0.5rem !important;
           bottom: auto !important;
           left: auto !important;
           right: auto !important;
-          margin-top: 0.25rem !important;
+          margin-top: 0.125rem !important;
         }
 
-        /* Priority 2: WILD text properly sized for larger cards */
+        /* Priority 2: WILD text sized for 3.5rem x 5rem cards */
         .card-mobile .absolute.bottom-1 {
           position: relative !important;
-          font-size: 0.875rem !important;
+          font-size: 0.5rem !important;
           bottom: auto !important;
           left: auto !important;
           right: auto !important;
-          margin-top: 0.25rem !important;
+          margin-top: 0.125rem !important;
         }
 
         /* Enhanced dragging visual feedback on mobile */
