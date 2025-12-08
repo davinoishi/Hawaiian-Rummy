@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hawaiian Rummy</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=5">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=5">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=5">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=5">
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=5">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=6">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=6">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=6">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=6">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=6">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -216,6 +216,27 @@
           padding: 0.75rem 1.25rem !important;
           font-size: 0.875rem !important;
           min-height: 44px !important;
+        }
+
+        /* Priority 3: Vertical button layout on mobile */
+        .hand-actions,
+        .buy-actions {
+          display: flex !important;
+          flex-direction: column !important;
+          width: 100% !important;
+          gap: 0.5rem !important;
+        }
+
+        .hand-actions button,
+        .buy-actions button {
+          width: 100% !important;
+        }
+
+        /* Priority 3: Separate discard button with visual distinction */
+        .hand-actions button:last-child {
+          margin-top: 0.75rem !important;
+          padding-top: 1rem !important;
+          border-top: 2px solid #e5e7eb !important;
         }
 
         /* Priority 1: Increased touch target for volume slider */
@@ -2862,24 +2883,6 @@
                         className="w-full p-4 border-2 border-orange-300 rounded-xl mb-4 text-lg focus:border-orange-500 focus:outline-none"
                       />
 
-                      {/* Tutorial Mode Checkbox */}
-                      <div className="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={tutorialMode}
-                            onChange={(e) => setTutorialMode(e.target.checked)}
-                            className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-                          />
-                          <span className="ml-3 text-base font-semibold text-gray-800">
-                            🎓 Tutorial Mode (Learn How to Play)
-                          </span>
-                        </label>
-                        <p className="mt-2 ml-8 text-sm text-gray-600">
-                          Step-by-step interactive guide for new players
-                        </p>
-                      </div>
-
                       {/* Create New Room Button */}
                       <button
                         onClick={createRoom}
@@ -2912,6 +2915,24 @@
                       >
                         📖 How to Play
                       </button>
+
+                      {/* Tutorial Mode Checkbox */}
+                      <div className="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-xl">
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={tutorialMode}
+                            onChange={(e) => setTutorialMode(e.target.checked)}
+                            className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                          />
+                          <span className="ml-3 text-base font-semibold text-gray-800">
+                            🎓 Tutorial Mode (Learn How to Play)
+                          </span>
+                        </label>
+                        <p className="mt-2 ml-8 text-sm text-gray-600">
+                          Step-by-step interactive guide for new players
+                        </p>
+                      </div>
 
                       {/* Error message */}
                       {message && (

@@ -18,6 +18,16 @@ All notable changes to Hawaiian Rummy will be documented in this file.
   - Meld cards: 3.5rem x 5rem minimum size
   - Player info text increased from 0.75rem to 0.875rem
   - Player name headings increased from 0.875rem to 1rem
+- **Button Layout Optimization (Priority 3)**: Improved mobile button layout
+  - Vertical button layout on mobile (full width, stacked)
+  - Discard button separated with visual distinction (top border and extra padding)
+  - Consistent 0.5rem gap between buttons
+- **Player Info Optimization (Priority 4)**: Streamlined player displays on mobile
+  - AI player card backs hidden (card count still visible)
+  - Compact player info boxes with reduced padding
+  - Larger, more readable meld cards
+- **UI Improvements**:
+  - Moved Tutorial Mode checkbox to bottom of opening screen (after How to Play button)
 
 ## [Phase 5] - 2025-12-07
 
