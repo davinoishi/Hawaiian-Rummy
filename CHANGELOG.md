@@ -2,6 +2,23 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [Phase 5] - 2025-12-08
+
+### Mobile UX Improvements - Phase 2
+- **Touch Target Improvements**: Increased all button sizes to meet 44px minimum touch target
+  - Action buttons (Create Set, Create Run, Layoff, Discard) now have larger padding (0.75rem x 1.25rem)
+  - Sort buttons increased to 0.75rem x 1rem padding
+  - Buy action buttons increased to meet accessibility standards
+  - Volume slider height increased to 44px for easier control
+- **Card & Text Size Improvements**: Significantly larger cards and text for better mobile readability
+  - Hand cards increased from 1.85rem x 2.65rem to 6rem x 8rem (3x larger)
+  - Card rank text increased from 0.6rem to 1.875rem
+  - Card suit text increased from 0.5rem to 1.5rem
+  - WILD indicator text increased from 0.4rem to 0.875rem
+  - Meld cards increased to 3.5rem x 5rem minimum size
+  - Player info text increased from 0.75rem to 0.875rem
+  - Player name headings increased from 0.875rem to 1rem
+
 ## [Phase 5] - 2025-12-07
 
 ### Critical AI Fixes
