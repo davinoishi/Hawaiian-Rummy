@@ -1039,28 +1039,28 @@
           ];
 
           // Sound manager using Web Audio API
-          const playSound = (type) => {
+          const playSound = async (type) => {
             if (isMuted) return;
 
-            // Initialize AudioContext on first use
-            if (!audioContextRef.current) {
-              audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            try {
+              // Initialize AudioContext on first use
+              if (!audioContextRef.current) {
+                audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+              }
 
-            const audioContext = audioContextRef.current;
+              const audioContext = audioContextRef.current;
 
-            // Resume AudioContext if suspended (required for iOS/Safari)
-            if (audioContext.state === 'suspended') {
-              audioContext.resume().catch(err => {
-                console.log('AudioContext resume failed:', err);
-              });
-            }
+              // Resume AudioContext if suspended (required for iOS/Safari)
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+                console.log('AudioContext resumed, state:', audioContext.state);
+              }
 
-            const gainNode = audioContext.createGain();
-            gainNode.gain.value = volume;
-            gainNode.connect(audioContext.destination);
+              const gainNode = audioContext.createGain();
+              gainNode.gain.value = volume;
+              gainNode.connect(audioContext.destination);
 
-            const now = audioContext.currentTime;
+              const now = audioContext.currentTime;
 
             switch (type) {
               case 'draw': {
@@ -1171,6 +1171,9 @@
                 osc.stop(now + 0.45); // 3x longer than short beep
                 break;
               }
+            }
+            } catch (err) {
+              console.error('Sound playback error:', err);
             }
           };
 
@@ -3572,6 +3575,16 @@
                     </button>
                   </div>
 
+                  {/* Round Goal Display - Bottom section for mobile */}
+                  <div className="col-span-3 row-start-3 flex justify-center p-2 mobile-order-6">
+                    <div className="bg-yellow-100 border-2 border-yellow-400 rounded-lg px-4 py-2 text-center">
+                      <div className="text-xs font-semibold text-yellow-800 mb-1">Round {gameState.currentRound + 1} Goal:</div>
+                      <div className="text-sm font-bold text-yellow-900">
+                        {roundRequirements[gameState.currentRound]?.description || 'Loading...'}
+                      </div>
+                    </div>
+                  </div>
+
                   {gameState.players.map((player, idx) => {
                     const isCurrentPlayer = idx === gameState.currentPlayerIndex;
                     const isMe = player.isMe;
@@ -3613,28 +3626,27 @@
                             : 'bg-white'
                         }`}
                       >
-                        <div className="flex justify-between items-start mb-3">
-                          <h3 className="font-bold text-lg">
-                            {player.name}
-                            {hasBuyPriority && (
-                              <span className="ml-2 text-xs bg-purple-600 text-white px-2 py-1 rounded-full">
-                                BUY PRIORITY
-                              </span>
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <h3 className="font-bold text-base">
+                              {player.name} - {player.handSize} card{player.handSize !== 1 ? 's' : ''}
+                              {hasBuyPriority && (
+                                <span className="ml-2 text-xs bg-purple-600 text-white px-2 py-1 rounded-full">
+                                  BUY
+                                </span>
+                              )}
+                            </h3>
+                            {isMe && player.handSize > 0 && (
+                              <div className="text-xs text-gray-500 mt-1">See "Your Hand" below</div>
                             )}
-                          </h3>
-                          <div className="text-right text-sm score-info">
-                            <div>Remaining Buys: {buysRemaining}</div>
+                          </div>
+                          <div className="text-right text-xs score-info">
+                            <div>Buys: {buysRemaining}</div>
                           </div>
                         </div>
 
                         {/* Player's hand (cards for human, card backs for AI) */}
                         <div className={`mb-2 ${isMe ? 'player-hand-section' : ''}`}>
-                          <div className="text-sm font-semibold mb-1">
-                            Hand: {player.handSize} card{player.handSize !== 1 ? 's' : ''}
-                            {isMe && player.handSize > 0 && (
-                              <span className="text-xs text-gray-500 font-normal ml-2">- See "Your Hand" section below</span>
-                            )}
-                          </div>
                           {!isMe && (
                             <div className="flex flex-wrap gap-1">
                               {/* Show card backs for AI players (hidden on mobile via CSS) */}
@@ -3656,9 +3668,11 @@
 
                         {/* Player's melds */}
                         <div>
-                          <div className="text-sm font-semibold mb-1">Melds:</div>
                           {player.melds.length === 0 ? (
-                            <div className="text-xs text-gray-400">None</div>
+                            <div>
+                              <div className="text-sm font-semibold mb-1">Melds:</div>
+                              <div className="text-xs text-gray-400">None</div>
+                            </div>
                           ) : (
                             <div className="space-y-2 max-h-80 overflow-y-auto player-melds">
                               {player.melds.map((meld, meldIdx) => {
@@ -3831,7 +3845,7 @@
                               : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           }`}
                         >
-                          Request Buy ({gameState.maxBuys - gameState.myBuyCount} left)
+                          Buy ({gameState.maxBuys - gameState.myBuyCount} left)
                         </button>
 
                         {/* Cancel Buy button */}
@@ -3844,7 +3858,7 @@
                               : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                           }`}
                         >
-                          Cancel Buy
+                          Cancel
                         </button>
 
                         {/* Pass button with countdown */}
