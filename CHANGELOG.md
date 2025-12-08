@@ -4,6 +4,12 @@ All notable changes to Hawaiian Rummy will be documented in this file.
 
 ## [Phase 5] - 2025-12-07
 
+### Critical AI Fixes
+- **AI Discard Hang**: Fixed critical bug where AI would hang when game phase is 'discard' - AI now properly handles discard phase
+- **Safety Timeout**: Added 10-second watchdog timer that forces AI to discard if it gets stuck, preventing game hangs
+- **Emergency Discard**: Added fallback logic to discard first card if chooseDiscardCard fails
+- **Better Logging**: Enhanced logging to detect and debug AI stuck states
+
 ### Mobile UX Improvements
 - **Card Selection**: Changed from double-tap to single-tap for easier card selection
 - **Drag Threshold**: Increased drag threshold from 15px to 30px to prevent accidental drags when tapping cards

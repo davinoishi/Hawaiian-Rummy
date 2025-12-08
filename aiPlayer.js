@@ -12,6 +12,11 @@ class AIPlayer {
     this.pendingAction = false; // Flag to prevent overlapping actions
     this.lastBuyDecisionCard = null; // Track last card we made a buy decision on
 
+    // Safety timeout mechanism to prevent hangs
+    this.safetyTimer = null; // Timer to force action if AI gets stuck
+    this.lastActionTime = Date.now(); // Track when we last took an action
+    this.SAFETY_TIMEOUT = 10000; // 10 seconds - if no action, force one
+
     // Opponent tracking for competitive AI
     this.opponentTracking = {}; // Map of playerId -> tracking data
     this.lastDiscardPileSize = 0; // Track discard pile to detect new discards
@@ -122,6 +127,9 @@ class AIPlayer {
     this.lastProcessedState = stateSignature;
     this.pendingAction = true;
 
+    // Start safety timer - if we don't take action within SAFETY_TIMEOUT, force one
+    this.startSafetyTimer(state);
+
     // Make decisions based on phase
     setTimeout(() => {
       try {
@@ -133,16 +141,72 @@ class AIPlayer {
             this.handleMeldPhase(state);
             break;
           case 'discard':
-            // Meld phase automatically transitions to discard
-            // We handle discard at the end of meld phase
-            this.pendingAction = false;
+            // FIX: Actually handle discard phase instead of assuming we came from meld phase
+            // This can happen if AI rejoins during discard or state updates arrive in discard phase
+            console.log(`${this.playerName} in DISCARD phase, handling discard...`);
+            this.handleDiscardPhase(state);
             break;
         }
       } catch (error) {
         console.error(`${this.playerName} decision error:`, error);
         this.pendingAction = false;
+        this.clearSafetyTimer();
       }
     }, this.decisionDelay);
+  }
+
+  // Start a safety timer that forces action if AI gets stuck
+  startSafetyTimer(state) {
+    // Clear any existing timer
+    this.clearSafetyTimer();
+
+    // Set a new timer
+    this.safetyTimer = setTimeout(() => {
+      console.error(`${this.playerName} SAFETY TIMEOUT! Forcing action to prevent hang...`);
+
+      // Force action based on game phase
+      try {
+        const currentState = this.gameState || state;
+
+        if (!currentState.isMyTurn) {
+          console.log(`${this.playerName} safety: not my turn, clearing state`);
+          this.pendingAction = false;
+          this.clearSafetyTimer();
+          return;
+        }
+
+        // Force discard if we have cards
+        if (currentState.myHand && currentState.myHand.length > 0) {
+          console.log(`${this.playerName} EMERGENCY DISCARD! Have ${currentState.myHand.length} cards`);
+
+          // Pick any non-wild card, or any card if only wilds
+          const nonWildCards = currentState.myHand.filter(c => !c.isWild);
+          const cardToDiscard = nonWildCards.length > 0 ? nonWildCards[0] : currentState.myHand[0];
+
+          if (cardToDiscard) {
+            this.socket.emit('discard', cardToDiscard.id);
+            this.pendingAction = false;
+            this.lastActionTime = Date.now();
+          }
+        } else {
+          console.log(`${this.playerName} safety: no cards to discard`);
+          this.pendingAction = false;
+        }
+      } catch (error) {
+        console.error(`${this.playerName} safety timeout error:`, error);
+        this.pendingAction = false;
+      }
+
+      this.clearSafetyTimer();
+    }, this.SAFETY_TIMEOUT);
+  }
+
+  // Clear the safety timer
+  clearSafetyTimer() {
+    if (this.safetyTimer) {
+      clearTimeout(this.safetyTimer);
+      this.safetyTimer = null;
+    }
   }
 
   // ===== DRAW PHASE DECISIONS =====
@@ -164,6 +228,8 @@ class AIPlayer {
       console.log(`${this.playerName} takes discard: ${discardCard.rank}${discardCard.suit}`);
       this.socket.emit('takeDiscard');
       this.pendingAction = false;
+      this.clearSafetyTimer();
+      this.lastActionTime = Date.now();
       return;
     }
 
@@ -172,6 +238,8 @@ class AIPlayer {
       console.log(`${this.playerName} draws from deck`);
       this.socket.emit('drawCard');
       this.pendingAction = false;
+      this.clearSafetyTimer();
+      this.lastActionTime = Date.now();
       return;
     }
 
@@ -180,6 +248,8 @@ class AIPlayer {
       console.log(`${this.playerName} passes to allow buy requests`);
       this.socket.emit('passBuy');
       this.pendingAction = false;
+      this.clearSafetyTimer();
+      this.lastActionTime = Date.now();
       return;
     }
 
@@ -308,6 +378,8 @@ class AIPlayer {
           console.log(`${this.playerName} discards: ${cardToDiscard.rank}${cardToDiscard.suit}`);
           this.socket.emit('discard', cardToDiscard.id);
           this.pendingAction = false; // Reset after discard
+          this.clearSafetyTimer();
+          this.lastActionTime = Date.now();
         }
       }, 300);
       return;
@@ -320,6 +392,18 @@ class AIPlayer {
       console.log(`${this.playerName} discards: ${cardToDiscard.rank}${cardToDiscard.suit}`);
       this.socket.emit('discard', cardToDiscard.id);
       this.pendingAction = false; // Reset after discard
+      this.clearSafetyTimer(); // Clear safety timer after successful discard
+      this.lastActionTime = Date.now();
+    } else {
+      console.error(`${this.playerName} ERROR: No card to discard! Hand:`, hand.map(c => `${c.rank}${c.suit}`));
+      // Force discard first card as emergency fallback
+      if (hand.length > 0) {
+        console.log(`${this.playerName} EMERGENCY: Discarding first card ${hand[0].rank}${hand[0].suit}`);
+        this.socket.emit('discard', hand[0].id);
+        this.pendingAction = false;
+        this.clearSafetyTimer();
+        this.lastActionTime = Date.now();
+      }
     }
   }
 
