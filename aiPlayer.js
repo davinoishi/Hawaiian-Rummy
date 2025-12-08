@@ -7,7 +7,7 @@ class AIPlayer {
     this.roomId = roomId;
     this.socket = null;
     this.gameState = null;
-    this.decisionDelay = 3000; // 3 second delay to give human players time to request buys
+    this.decisionDelay = 1500; // 1.5 second delay to give human players time to request buys
     this.lastProcessedState = null; // Track last state to prevent duplicate actions
     this.pendingAction = false; // Flag to prevent overlapping actions
     this.lastBuyDecisionCard = null; // Track last card we made a buy decision on
@@ -180,6 +180,16 @@ class AIPlayer {
       console.log(`${this.playerName} passes to allow buy requests`);
       this.socket.emit('passBuy');
       this.pendingAction = false;
+      return;
+    }
+
+    // PRIORITY 4: If we can't draw but there's no pass button shown yet,
+    // it means buy requests are being processed - wait a moment and retry
+    if (!currentState.canDraw && !currentState.shouldShowPass) {
+      console.log(`${this.playerName} waiting for buy processing, will retry...`);
+      this.pendingAction = false;
+      // Reset lastProcessedState so we can retry on next state update
+      this.lastProcessedState = null;
       return;
     }
 

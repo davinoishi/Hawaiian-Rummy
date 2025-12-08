@@ -303,6 +303,111 @@
       }
 
       /* Tablet landscape mode optimization */
+      /* Phone landscape mode - compact layout */
+      @media (max-width: 768px) and (orientation: landscape) {
+        body {
+          overflow-x: hidden;
+        }
+
+        .main-container {
+          padding: 0.25rem !important;
+          max-height: 100vh;
+          overflow-y: auto;
+        }
+
+        /* Reduce all vertical spacing */
+        .space-y-4 > * + * {
+          margin-top: 0.5rem !important;
+        }
+
+        .space-y-2 > * + * {
+          margin-top: 0.25rem !important;
+        }
+
+        /* Make cards smaller in landscape */
+        .card-container {
+          width: 35px !important;
+          height: 50px !important;
+        }
+
+        .card-mobile {
+          width: 35px !important;
+          height: 50px !important;
+          font-size: 0.5rem !important;
+        }
+
+        /* Compact headers */
+        h1 {
+          font-size: 1.25rem !important;
+          margin-bottom: 0.25rem !important;
+        }
+
+        h2 {
+          font-size: 1rem !important;
+          margin-bottom: 0.25rem !important;
+        }
+
+        h3 {
+          font-size: 0.875rem !important;
+        }
+
+        /* Compact buttons */
+        button {
+          padding: 0.25rem 0.5rem !important;
+          font-size: 0.75rem !important;
+        }
+
+        /* Compact player info */
+        .text-sm {
+          font-size: 0.65rem !important;
+        }
+
+        /* Reduce meld container spacing */
+        .melds-container {
+          padding: 0.25rem !important;
+          margin-bottom: 0.25rem !important;
+        }
+
+        /* Compact discard pile */
+        .discard-pile {
+          padding: 0.5rem !important;
+        }
+
+        /* Hide unnecessary spacing elements */
+        .mb-4, .mb-6, .mb-8 {
+          margin-bottom: 0.25rem !important;
+        }
+
+        .mt-4, .mt-6, .mt-8 {
+          margin-top: 0.25rem !important;
+        }
+
+        .p-4, .p-6 {
+          padding: 0.5rem !important;
+        }
+
+        /* Make player scores more compact */
+        .scores-section {
+          padding: 0.25rem !important;
+          margin-bottom: 0.25rem !important;
+        }
+
+        .score-player {
+          padding: 0.25rem !important;
+          font-size: 0.65rem !important;
+        }
+
+        /* Reduce gap in flex containers */
+        .gap-2 {
+          gap: 0.25rem !important;
+        }
+
+        .gap-4 {
+          gap: 0.5rem !important;
+        }
+      }
+
+      /* Tablet landscape mode */
       @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
         .players-grid {
           grid-template-columns: repeat(4, 1fr) !important;
@@ -943,6 +1048,14 @@
             }
 
             const audioContext = audioContextRef.current;
+
+            // Resume AudioContext if suspended (required for iOS/Safari)
+            if (audioContext.state === 'suspended') {
+              audioContext.resume().catch(err => {
+                console.log('AudioContext resume failed:', err);
+              });
+            }
+
             const gainNode = audioContext.createGain();
             gainNode.gain.value = volume;
             gainNode.connect(audioContext.destination);
@@ -1463,6 +1576,28 @@
               });
             };
           }, [gamePhase, gameState]); // Re-attach when game phase or state changes
+
+          // Enable audio on first user interaction (required for iOS/Safari)
+          useEffect(() => {
+            const enableAudio = () => {
+              if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+                audioContextRef.current.resume().then(() => {
+                  console.log('AudioContext resumed successfully');
+                }).catch(err => {
+                  console.log('AudioContext resume error:', err);
+                });
+              }
+            };
+
+            // Listen for first user interaction
+            document.addEventListener('touchstart', enableAudio, { once: true });
+            document.addEventListener('click', enableAudio, { once: true });
+
+            return () => {
+              document.removeEventListener('touchstart', enableAudio);
+              document.removeEventListener('click', enableAudio);
+            };
+          }, []);
 
           // Trigger confetti on round summary
           useEffect(() => {
