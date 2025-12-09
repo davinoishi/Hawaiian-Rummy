@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hawaiian Rummy</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=6">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=6">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=6">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=6">
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=6">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=7">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=7">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=7">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=7">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=7">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -3719,7 +3719,7 @@
 
                 {/* Discard pile and deck */}
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-4 discard-section mobile-order-1">
-                  <h2 className="text-xl font-bold mb-3">Discard Pile & Actions</h2>
+                  <h2 className="text-xl font-bold mb-3">Discard Pile & Buy Actions</h2>
                   <div className="flex gap-4 items-start">
                     {/* Discard pile and deck */}
                     <div className="flex gap-2">
@@ -3781,7 +3781,6 @@
 
                     {/* Buy controls - ALWAYS VISIBLE */}
                     <div className="flex-1">
-                      <div className="text-sm font-semibold mb-2">Buy Actions:</div>
                       <div className="flex gap-2 flex-wrap buy-actions">
                         {/* Request Buy button */}
                         <button
@@ -3827,26 +3826,26 @@
                           }
                         </button>
                       </div>
-
-                      {/* Buy status info */}
-                      {gameState.buyRequests && gameState.buyRequests.length > 0 && (
-                        <div className="mt-2 text-sm bg-purple-100 px-3 py-2 rounded buy-status border-l-4 border-purple-600">
-                          <div className="font-semibold text-purple-900">
-                            {gameState.buyRequests.length} player(s) want to buy
-                          </div>
-                          {gameState.nextPlayerToBuy && (
-                            <div className="text-purple-700 mt-1">
-                              Priority: <strong>{gameState.players.find(p => p.id === gameState.nextPlayerToBuy)?.name || 'Unknown'}</strong>
-                              {' '}(closest in turn order)
-                            </div>
-                          )}
-                          <div className="text-purple-600 text-xs mt-1">
-                            All players between current player and buyer must pass
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
+
+                  {/* Buy status info - full screen width */}
+                  {gameState.buyRequests && gameState.buyRequests.length > 0 && (
+                    <div className="mt-3 text-sm bg-purple-100 px-3 py-2 rounded buy-status border-l-4 border-purple-600">
+                      <div className="font-semibold text-purple-900">
+                        {gameState.buyRequests.length} player(s) want to buy
+                      </div>
+                      {gameState.nextPlayerToBuy && (
+                        <div className="text-purple-700 mt-1">
+                          Priority: <strong>{gameState.players.find(p => p.id === gameState.nextPlayerToBuy)?.name || 'Unknown'}</strong>
+                          {' '}(closest in turn order)
+                        </div>
+                      )}
+                      <div className="text-purple-600 text-xs mt-1">
+                        All players between current player and buyer must pass
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* My hand */}
@@ -3939,50 +3938,65 @@
                   <div className="mt-4">
                     <div className="text-sm font-semibold mb-2">Hand Actions:</div>
                     <div className="flex gap-2 flex-wrap hand-actions">
-                      <button
-                        onClick={() => createMeld('set')}
-                        disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
-                        className={`px-4 py-2 rounded transition-all ${
-                          gameState.isMyTurn && gameState.gamePhase !== 'draw'
-                            ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        }`}
-                      >
-                        Create Set
-                      </button>
-                      <button
-                        onClick={() => createMeld('run')}
-                        disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
-                        className={`px-4 py-2 rounded transition-all ${
-                          gameState.isMyTurn && gameState.gamePhase !== 'draw'
-                            ? 'bg-purple-600 text-white hover:bg-purple-700 cursor-pointer'
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        }`}
-                      >
-                        Create Run
-                      </button>
-                      <button
-                        onClick={layoffCard}
-                        disabled={!gameState.isMyTurn || !gameState.hasMetRequirements || gameState.gamePhase === 'draw'}
-                        className={`px-4 py-2 rounded transition-all ${
-                          gameState.isMyTurn && gameState.hasMetRequirements && gameState.gamePhase !== 'draw'
-                            ? 'bg-orange-600 text-white hover:bg-orange-700 cursor-pointer'
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        }`}
-                      >
-                        Layoff Card {!gameState.hasMetRequirements && '(Complete melds first)'}
-                      </button>
-                      <button
-                        onClick={cancelMelds}
-                        disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw' || !gameState.myMelds || gameState.myMelds.length === 0 || gameState.hasMetRequirements}
-                        className={`px-4 py-2 rounded transition-all ${
-                          gameState.isMyTurn && gameState.gamePhase !== 'draw' && gameState.myMelds && gameState.myMelds.length > 0 && !gameState.hasMetRequirements
-                            ? 'bg-yellow-600 text-white hover:bg-yellow-700 cursor-pointer'
-                            : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                        }`}
-                      >
-                        Cancel Melding
-                      </button>
+                      {/* Show Create Set/Run only when requirements not met */}
+                      {!gameState.hasMetRequirements && (
+                        <>
+                          <button
+                            onClick={() => createMeld('set')}
+                            disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                            className={`px-4 py-2 rounded transition-all ${
+                              gameState.isMyTurn && gameState.gamePhase !== 'draw'
+                                ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            Create Set
+                          </button>
+                          <button
+                            onClick={() => createMeld('run')}
+                            disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                            className={`px-4 py-2 rounded transition-all ${
+                              gameState.isMyTurn && gameState.gamePhase !== 'draw'
+                                ? 'bg-purple-600 text-white hover:bg-purple-700 cursor-pointer'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                            }`}
+                          >
+                            Create Run
+                          </button>
+                        </>
+                      )}
+
+                      {/* Show Layoff only when requirements are met */}
+                      {gameState.hasMetRequirements && (
+                        <button
+                          onClick={layoffCard}
+                          disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                          className={`px-4 py-2 rounded transition-all ${
+                            gameState.isMyTurn && gameState.gamePhase !== 'draw'
+                              ? 'bg-orange-600 text-white hover:bg-orange-700 cursor-pointer'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          Layoff Card
+                        </button>
+                      )}
+
+                      {/* Show Cancel only when melds exist but requirements not met */}
+                      {gameState.myMelds && gameState.myMelds.length > 0 && !gameState.hasMetRequirements && (
+                        <button
+                          onClick={cancelMelds}
+                          disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw'}
+                          className={`px-4 py-2 rounded transition-all ${
+                            gameState.isMyTurn && gameState.gamePhase !== 'draw'
+                              ? 'bg-yellow-600 text-white hover:bg-yellow-700 cursor-pointer'
+                              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          }`}
+                        >
+                          Cancel Melding
+                        </button>
+                      )}
+
+                      {/* Discard always shown */}
                       <button
                         onClick={discard}
                         disabled={!gameState.isMyTurn || gameState.gamePhase === 'draw' || !isTutorialActionAllowed('discard')}

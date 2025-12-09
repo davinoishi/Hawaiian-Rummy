@@ -4,6 +4,17 @@ All notable changes to Hawaiian Rummy will be documented in this file.
 
 ## [Phase 5] - 2025-12-08
 
+### Mobile UX Improvements - Phase 3
+- **Conditional Button Display**: Reduced mobile scrolling by showing only valid action buttons
+  - "Create Set" and "Create Run" buttons only shown when meld requirements not yet met
+  - "Layoff Card" button only shown after meld requirements are met
+  - "Cancel Melding" button only shown when melds exist but requirements not yet met
+  - "Discard" button always visible (primary action)
+- **Full-Screen Buy Notifications**: Buy status notifications now span full screen width for better visibility
+- **UI Improvements**:
+  - Renamed "Discard Pile & Actions" to "Discard Pile & Buy Actions" for clarity
+  - Removed redundant "Buy Actions:" label text
+
 ### Mobile UX Improvements - Phase 2
 - **Touch Target Improvements**: Increased all button sizes to meet 44px minimum touch target
   - Action buttons (Create Set, Create Run, Layoff, Discard) now have larger padding (0.75rem x 1.25rem)
