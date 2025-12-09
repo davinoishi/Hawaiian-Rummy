@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hawaiian Rummy</title>
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=7">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=7">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=7">
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=7">
-    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=7">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=8">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=8">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=8">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=8">
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico?v=8">
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
@@ -65,10 +65,13 @@
         }
 
         /* Priority 2: Remove scrolling from melds on mobile - expand to show all */
+        /* Priority 8: Scroll optimization for player melds */
         .player-melds {
           max-height: none !important;
           overflow-y: visible !important;
           font-size: 0.875rem !important;
+          -webkit-overflow-scrolling: touch !important;
+          overscroll-behavior: contain !important;
         }
 
         /* Priority 2: Larger meld cards for better readability */
@@ -339,11 +342,15 @@
         /* Just ensure proper scrolling - keep the same vertical mobile layout */
         body {
           overflow-x: hidden;
+          overscroll-behavior: contain;
         }
 
+        /* Priority 8: Scroll optimization for main container */
         .main-container {
           max-height: 100vh;
           overflow-y: auto;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
         }
 
         /* Slightly reduce vertical spacing to fit more content */
@@ -1136,6 +1143,10 @@
           const triggerHaptic = (intensity = 'medium') => {
             if ('vibrate' in navigator) {
               switch(intensity) {
+                case 'tap':
+                  // Very light tap for button presses
+                  navigator.vibrate(10);
+                  break;
                 case 'light':
                   navigator.vibrate(10);
                   break;
@@ -1144,6 +1155,14 @@
                   break;
                 case 'strong':
                   navigator.vibrate(50);
+                  break;
+                case 'success':
+                  // Triple pulse for successful actions (discard, meld)
+                  navigator.vibrate([50, 100, 50, 100, 50]);
+                  break;
+                case 'error':
+                  // Double pulse for errors
+                  navigator.vibrate([100, 50, 100]);
                   break;
                 default:
                   navigator.vibrate(20);
@@ -1697,20 +1716,25 @@
           const createMeld = (type) => {
             // Tutorial check
             if (!isTutorialActionAllowed('createMeld')) {
+              triggerHaptic('error');
               setMessage('Not allowed in this tutorial step');
               return;
             }
 
             if (selectedCards.length === 0) {
+              triggerHaptic('error');
               setMessage('Select cards first');
               return;
             }
             playSound('meld'); // Play meld sound
-            triggerHaptic('medium'); // Haptic feedback for meld
+            triggerHaptic('tap'); // Light haptic for button press
             console.log(`[Tutorial] createMeld called, tutorialActive=${tutorialActive}, tutorialStep=${tutorialStep}`);
             socket.emit('createMeld', { type, cardIds: selectedCards }, (response) => {
               console.log(`[Tutorial] createMeld response:`, response);
               if (response && response.success) {
+                // Success haptic for completed meld
+                triggerHaptic('success');
+
                 // Trigger meld snap animation for the newly created meld
                 const meldIndex = gameState?.myMelds?.length || 0;
                 setAnimatingMeldIndex(meldIndex);
@@ -1722,6 +1746,8 @@
 
                 // Note: requirementsMet is now checked in useEffect when gameState updates
               } else {
+                // Error haptic for failed meld
+                triggerHaptic('error');
                 console.log(`[Tutorial] createMeld failed:`, response);
               }
             });
@@ -1736,9 +1762,11 @@
 
           const layoffCard = () => {
             if (selectedCards.length !== 1) {
+              triggerHaptic('error');
               setMessage('Select exactly one card to layoff');
               return;
             }
+            triggerHaptic('tap');
             setLayoffMode(true);
             setMessage('Click on a meld to place the card');
           };
@@ -1873,11 +1901,13 @@
 
             // Tutorial check
             if (!isTutorialActionAllowed('discard')) {
+              triggerHaptic('error');
               setMessage('Not allowed in this tutorial step');
               return;
             }
 
             if (!gameState.isMyTurn || gameState.gamePhase === 'draw') {
+              triggerHaptic('error');
               setMessage('Cannot discard now');
               return;
             }
@@ -1897,17 +1927,20 @@
             // Priority 3: If multiple cards selected, show error
             else if (selectedCards.length > 1) {
               console.log('Error: Multiple cards selected');
+              triggerHaptic('error');
               setMessage('Select only ONE card to discard');
               return;
             }
             // Priority 4: No selection and multiple cards in hand
             else {
               console.log('Error: No card selected and multiple cards in hand');
+              triggerHaptic('error');
               setMessage('Select exactly one card to discard');
               return;
             }
 
-            // Trigger discard animation and sound
+            // Trigger discard animation, sound, and success haptic
+            triggerHaptic('success');
             playSound('discard');
             setDiscardAnimation(true);
             setAnimatingCard({ type: 'discard', from: 'hand', to: 'discard' });

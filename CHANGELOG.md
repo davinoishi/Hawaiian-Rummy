@@ -4,6 +4,17 @@ All notable changes to Hawaiian Rummy will be documented in this file.
 
 ## [Phase 5] - 2025-12-08
 
+### Mobile UX Improvements - Phase 4
+- **Enhanced Haptic Feedback (Priority 7)**: Different vibration patterns for various actions
+  - Success pattern: Triple pulse [50, 100, 50, 100, 50] for successful discard and meld creation
+  - Error pattern: Double pulse [100, 50, 100] for validation errors and failed actions
+  - Tap pattern: Light 10ms vibration for button presses
+  - Improved feedback clarity helps users understand action results without looking at screen
+- **Scroll Optimization (Priority 8)**: Enhanced scrolling behavior on mobile
+  - Added -webkit-overflow-scrolling: touch for momentum scrolling
+  - Added overscroll-behavior: contain to prevent page bounce
+  - Applied to main container and player melds for smoother scrolling experience
+
 ### Mobile UX Improvements - Phase 3
 - **Conditional Button Display**: Reduced mobile scrolling by showing only valid action buttons
   - "Create Set" and "Create Run" buttons only shown when meld requirements not yet met
