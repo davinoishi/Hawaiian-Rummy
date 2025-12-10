@@ -1,13 +1,3 @@
-// ===== SENTRY ERROR TRACKING =====
-// Initialize Sentry first, before any other code
-const Sentry = require('@sentry/node');
-
-Sentry.init({
-  dsn: "https://1abc107799876c740efe73f8c145cbce@o4510496207929344.ingest.us.sentry.io/4510496214745088",
-  environment: process.env.NODE_ENV || "production",
-  tracesSampleRate: 1.0,
-});
-
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
