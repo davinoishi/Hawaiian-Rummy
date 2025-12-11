@@ -4059,7 +4059,7 @@
                 <div className="bg-white rounded-lg shadow-lg p-6 mb-4 scores-section mobile-order-4">
                   <h2 className="text-xl font-bold mb-3">Player Scores</h2>
                   <div className="space-y-2">
-                    {gameState.players.map((player, idx) => {
+                    {[...gameState.players].sort((a, b) => a.score - b.score).map((player, idx) => {
                       const isMe = player.isMe;
                       return (
                         <div

@@ -1517,8 +1517,12 @@ function getPossibleRunArrangements(cards) {
 
       // Check that the sequence doesn't wrap around
       // A wrap would have Ace as both high (14) and in a low position (near 2,3)
-      if (aceHigh && startValue <= 3) continue; // If Ace is high, can't have 2,3 at start
-      if (!aceHigh && endValue >= 13) continue; // If Ace is low, can't have K at end
+      // Only apply these checks if Ace is actually present in the run
+      const hasAce = nonWildCards.some(c => c.rank === 'A');
+      if (hasAce) {
+        if (aceHigh && startValue <= 3) continue; // If Ace is high, can't have 2,3 at start
+        if (!aceHigh && endValue >= 13) continue; // If Ace is low, can't have K at end
+      }
 
       // Build the sequence string
       const sequence = [];
