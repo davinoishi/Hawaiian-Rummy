@@ -97,6 +97,7 @@ const suits = ['♠', '♥', '♦', '♣'];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const AI_NAMES = ['Alex-AI', 'Jordan-AI', 'Taylor-AI'];
 const PORT = process.env.PORT || 3001;
+const BUY_WINDOW_DURATION = 5000; // 5 seconds for buy window
 
 // Helper function to create a new game state
 function createGameState() {
@@ -121,7 +122,8 @@ function createGameState() {
     roundsWon: {},
     passedBuy: [],
     buyJustProcessed: false,
-    continueClicked: []
+    continueClicked: [],
+    lastDiscardTimestamp: null
   };
 }
 
@@ -560,6 +562,13 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // Check if buy window is still active
+    if (isBuyWindowActive(roomId)) {
+      const remainingTime = Math.ceil((BUY_WINDOW_DURATION - (Date.now() - gameState.lastDiscardTimestamp)) / 1000);
+      socket.emit('error', `Please wait ${remainingTime} second(s) for other players to buy.`);
+      return;
+    }
+
     // IMPORTANT: If there are active buy requests, current player CANNOT draw from deck
     // They can only take the discard or pass to allow others to buy
     if (gameState.buyRequests && gameState.buyRequests.length > 0) {
@@ -758,6 +767,13 @@ io.on('connection', (socket) => {
     if (!gameState) return;
 
     if (!isPlayerTurn(socket.id, roomId) || gameState.gamePhase !== 'draw') {
+      return;
+    }
+
+    // Check if buy window is still active
+    if (isBuyWindowActive(roomId)) {
+      const remainingTime = Math.ceil((BUY_WINDOW_DURATION - (Date.now() - gameState.lastDiscardTimestamp)) / 1000);
+      socket.emit('error', `Please wait ${remainingTime} second(s) for other players to buy.`);
       return;
     }
 
@@ -1094,6 +1110,7 @@ io.on('connection', (socket) => {
     gameState.discardPile.push(card);
     gameState.playerHands[socket.id] = hand.filter(c => c.id !== cardId);
     gameState.lastDiscarder = socket.id;
+    gameState.lastDiscardTimestamp = Date.now(); // Set timestamp for buy window
 
     // Check if round is over (discarded last card)
     if (gameState.playerHands[socket.id].length === 0 &&
@@ -1187,6 +1204,13 @@ function isPlayerTurn(playerId, roomId) {
   const gameState = games.get(roomId);
   if (!gameState) return false;
   return gameState.players[gameState.currentPlayerIndex] === playerId;
+}
+
+function isBuyWindowActive(roomId) {
+  const gameState = games.get(roomId);
+  if (!gameState || !gameState.lastDiscardTimestamp) return false;
+  const elapsed = Date.now() - gameState.lastDiscardTimestamp;
+  return elapsed < BUY_WINDOW_DURATION;
 }
 
 function nextTurn(roomId) {
@@ -1366,11 +1390,12 @@ function broadcastGameState(roomId) {
         }
       });
 
-      // Current player can draw ONLY if there are no pending buy requests
+      // Current player can draw ONLY if there are no pending buy requests AND buy window has elapsed
       // If there are buy requests, they must take discard or pass
       const canDraw = isPlayerTurn(playerId, roomId) &&
                       gameState.gamePhase === 'draw' &&
-                      (!gameState.buyRequests || gameState.buyRequests.length === 0);
+                      (!gameState.buyRequests || gameState.buyRequests.length === 0) &&
+                      !isBuyWindowActive(roomId);
 
       // Player can buy if:
       // 1. Not their turn
@@ -1401,8 +1426,8 @@ function broadcastGameState(roomId) {
                                return reqDistance > distance;
                              })));
 
-      // Current player can take discard if it's their turn AND no buy just processed
-      const canTakeDiscard = isPlayerTurn(playerId, roomId) && gameState.gamePhase === 'draw' && !gameState.buyJustProcessed;
+      // Current player can take discard if it's their turn AND no buy just processed AND buy window has elapsed
+      const canTakeDiscard = isPlayerTurn(playerId, roomId) && gameState.gamePhase === 'draw' && !gameState.buyJustProcessed && !isBuyWindowActive(roomId);
 
       socket.emit('gameState', {
         players: gameState.players.map(id => {
@@ -1441,7 +1466,10 @@ function broadcastGameState(roomId) {
         winner: winner,
         isWinner: winner === playerId,
         continueClicked: gameState.continueClicked,
-        hasContinued: gameState.continueClicked.includes(playerId)
+        hasContinued: gameState.continueClicked.includes(playerId),
+        buyWindowActive: isBuyWindowActive(roomId),
+        buyWindowRemaining: gameState.lastDiscardTimestamp ?
+          Math.max(0, Math.ceil((BUY_WINDOW_DURATION - (Date.now() - gameState.lastDiscardTimestamp)) / 1000)) : 0
       });
     }
   });
