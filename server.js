@@ -96,6 +96,7 @@ const aiPlayers = new Map();
 const suits = ['♠', '♥', '♦', '♣'];
 const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const AI_NAMES = ['Alex-AI', 'Jordan-AI', 'Taylor-AI'];
+const PORT = process.env.PORT || 3001;
 
 // Helper function to create a new game state
 function createGameState() {
@@ -198,7 +199,7 @@ function spawnAIPlayers(roomId) {
 
   for (let i = 0; i < aiNeeded && i < AI_NAMES.length; i++) {
     const aiName = AI_NAMES[i];
-    const ai = new AIPlayer('http://localhost:3001', aiName, roomId);
+    const ai = new AIPlayer(`http://localhost:${PORT}`, aiName, roomId);
     ai.connect();
     roomAIPlayers.push(ai);
     console.log(`[Room ${roomId}] ${aiName} spawned`);
@@ -1856,7 +1857,6 @@ function checkMeldsMatchRequirements(playerId, roomId) {
   return true;
 }
 
-const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Hawaiian Rummy Server v${version}`);
   console.log(`Server running on http://localhost:${PORT}`);
