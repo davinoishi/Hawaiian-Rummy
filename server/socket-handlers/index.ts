@@ -5,6 +5,7 @@
 
 import { Server, Socket } from 'socket.io';
 import { GameManager } from '../game-manager';
+import { AIManager } from '../ai/ai-manager';
 import { setupRoomHandlers } from './room-handler';
 import { setupGameHandlers, createBroadcastFunction } from './game-handler';
 import { setupActionHandlers } from './action-handler';
@@ -15,13 +16,14 @@ export interface SocketHandlersDeps {
   gameManager: GameManager;
   logAnalytics: (event: string, data?: any) => void;
   spawnAIPlayers?: (roomId: string, maxAI?: number) => void;
+  aiManager?: AIManager;
 }
 
 /**
  * Set up all socket handlers for a connection
  */
 export function setupSocketHandlers(socket: Socket, deps: SocketHandlersDeps) {
-  const { io, gameManager, logAnalytics, spawnAIPlayers } = deps;
+  const { io, gameManager, logAnalytics, spawnAIPlayers, aiManager } = deps;
 
   // Create broadcast function
   const broadcastGameState = createBroadcastFunction(io, gameManager);
@@ -31,7 +33,8 @@ export function setupSocketHandlers(socket: Socket, deps: SocketHandlersDeps) {
     io,
     gameManager,
     logAnalytics,
-    spawnAIPlayers
+    spawnAIPlayers,
+    aiManager
   });
 
   // Set up game handlers

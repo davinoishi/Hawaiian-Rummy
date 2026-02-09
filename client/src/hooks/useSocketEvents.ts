@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
+import type { Socket } from 'socket.io-client';
 import { useUIStore } from '../store/ui-store';
 import { useAudio } from './useAudio';
 import { useHaptics } from './useHaptics';
@@ -33,6 +34,23 @@ interface BuyNotification {
   message: string;
 }
 
+interface PlayerDisconnectedData {
+  playerId: string;
+  playerName: string;
+  gracePeriodEnds: number;
+}
+
+interface PlayerReconnectedData {
+  playerId: string;
+  playerName: string;
+}
+
+interface PlayerTakenOverByAIData {
+  originalPlayerId: string;
+  newPlayerId: string;
+  playerName: string;
+}
+
 export function useSocketEvents() {
   const socket = useSocketStore((state) => state.socket);
 
@@ -43,6 +61,11 @@ export function useSocketEvents() {
     updateTurnOrder: useGameStore.getState().updateTurnOrder,
     setTurnOrderCountdown: useGameStore.getState().setTurnOrderCountdown,
     setAppPhase: useGameStore.getState().setAppPhase,
+    addDisconnectedPlayer: useGameStore.getState().addDisconnectedPlayer,
+    removeDisconnectedPlayer: useGameStore.getState().removeDisconnectedPlayer,
+    clearDisconnectedPlayers: useGameStore.getState().clearDisconnectedPlayers,
+    saveGameSession: useSocketStore.getState().saveGameSession,
+    clearGameSession: useSocketStore.getState().clearGameSession,
     setBuyNotification: useUIStore.getState().setBuyNotification,
     setErrorMessage: useUIStore.getState().setErrorMessage,
     setShowConfetti: useUIStore.getState().setShowConfetti,
@@ -85,6 +108,12 @@ export function useSocketEvents() {
     const handleLobbyUpdate = (data: LobbyUpdate) => {
       console.log('[CLIENT] lobbyUpdate received:', data);
       callbacks.updateLobby(data);
+
+      // Save game session for reconnection
+      const playerName = useGameStore.getState().playerName;
+      if (data.roomId && playerName) {
+        callbacks.saveGameSession(data.roomId, playerName);
+      }
     };
 
     const handleGameStarted = () => {
@@ -125,6 +154,10 @@ export function useSocketEvents() {
 
       // Handle game over
       if (state.gamePhase === 'gameOver') {
+        // Clear game session when game ends
+        callbacks.clearGameSession();
+        callbacks.clearDisconnectedPlayers();
+
         if (state.isWinner) {
           audioRef.current.playGameWin();
           hapticsRef.current.gameWin();
@@ -204,6 +237,39 @@ export function useSocketEvents() {
       });
     };
 
+    // Disconnect/reconnect events
+    const handlePlayerDisconnected = (data: PlayerDisconnectedData) => {
+      console.log('[CLIENT] playerDisconnected received:', data);
+      callbacks.addDisconnectedPlayer({
+        playerId: data.playerId,
+        playerName: data.playerName,
+        gracePeriodEnds: data.gracePeriodEnds
+      });
+    };
+
+    const handlePlayerReconnected = (data: PlayerReconnectedData) => {
+      console.log('[CLIENT] playerReconnected received:', data);
+      callbacks.removeDisconnectedPlayer(data.playerId);
+    };
+
+    const handlePlayerTakenOverByAI = (data: PlayerTakenOverByAIData) => {
+      console.log('[CLIENT] playerTakenOverByAI received:', data);
+      callbacks.removeDisconnectedPlayer(data.originalPlayerId);
+    };
+
+    // Game join error events
+    const handleGameAlreadyStarted = () => {
+      console.log('[CLIENT] gameAlreadyStarted received');
+      callbacks.setErrorMessage('This game has already started');
+      useGameStore.getState().setAppPhase('join');
+    };
+
+    const handleGameFull = () => {
+      console.log('[CLIENT] gameFull received');
+      callbacks.setErrorMessage('This game is full (4 players max)');
+      useGameStore.getState().setAppPhase('join');
+    };
+
     // Register event listeners
     socket.on('lobbyUpdate', handleLobbyUpdate);
     socket.on('gameStarted', handleGameStarted);
@@ -216,6 +282,11 @@ export function useSocketEvents() {
     socket.on('actionRejected', handleActionRejected);
     socket.on('needMeldWildcardPosition', handleNeedMeldWildcardPosition);
     socket.on('needWildcardPosition', handleNeedWildcardPosition);
+    socket.on('playerDisconnected', handlePlayerDisconnected);
+    socket.on('playerReconnected', handlePlayerReconnected);
+    socket.on('playerTakenOverByAI', handlePlayerTakenOverByAI);
+    socket.on('gameAlreadyStarted', handleGameAlreadyStarted);
+    socket.on('gameFull', handleGameFull);
 
     console.log('[useSocketEvents] All listeners registered');
 
@@ -234,6 +305,11 @@ export function useSocketEvents() {
       socket.off('actionRejected', handleActionRejected);
       socket.off('needMeldWildcardPosition', handleNeedMeldWildcardPosition);
       socket.off('needWildcardPosition', handleNeedWildcardPosition);
+      socket.off('playerDisconnected', handlePlayerDisconnected);
+      socket.off('playerReconnected', handlePlayerReconnected);
+      socket.off('playerTakenOverByAI', handlePlayerTakenOverByAI);
+      socket.off('gameAlreadyStarted', handleGameAlreadyStarted);
+      socket.off('gameFull', handleGameFull);
     };
   }, [socket]); // Only depend on socket
 }

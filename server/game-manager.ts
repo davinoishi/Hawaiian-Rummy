@@ -26,12 +26,29 @@ import {
 import { ROUND_REQUIREMENTS, BUY_WINDOW_DURATION } from '../shared/game-engine/constants';
 
 /**
+ * Grace period for disconnected players in milliseconds (45 seconds)
+ */
+export const DISCONNECT_GRACE_PERIOD = 45000;
+
+/**
+ * Disconnected player tracking data
+ */
+export interface DisconnectedPlayer {
+  playerId: string;
+  roomId: string;
+  playerName: string;
+  disconnectedAt: number;
+  gracePeriodTimer: NodeJS.Timeout;
+}
+
+/**
  * Room data structure
  */
 export interface Room {
   id: string;
   state: GameState;
   aiPlayerIds: string[];
+  disconnectedPlayers: Map<string, DisconnectedPlayer>;
   createdAt: number;
 }
 
@@ -58,6 +75,7 @@ export class GameManager {
       id,
       state: createInitialGameState(),
       aiPlayerIds: [],
+      disconnectedPlayers: new Map(),
       createdAt: Date.now()
     };
     this.rooms.set(id, room);
@@ -308,6 +326,7 @@ export class GameManager {
         wins: pState.roundsWon, // Alias for backwards compatibility
         roundScores: pState.roundScores,
         isMe: id === playerId,
+        isAI: room.aiPlayerIds.includes(id),
         hasMetRequirements: pState.hasMetRequirements
       };
     });
@@ -401,6 +420,230 @@ export class GameManager {
     }
 
     return cleaned;
+  }
+
+  // ===== DISCONNECT HANDLING =====
+
+  /**
+   * Mark a player as disconnected and start grace period tracking
+   * Returns the DisconnectedPlayer entry for timer setup by caller
+   */
+  markPlayerDisconnected(roomId: string, playerId: string): DisconnectedPlayer | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    const playerName = room.state.playerNames[playerId];
+    if (!playerName) return null;
+
+    const disconnectedPlayer: DisconnectedPlayer = {
+      playerId,
+      roomId,
+      playerName,
+      disconnectedAt: Date.now(),
+      gracePeriodTimer: null as unknown as NodeJS.Timeout // Will be set by caller
+    };
+
+    room.disconnectedPlayers.set(playerId, disconnectedPlayer);
+
+    // Add to disconnectedPlayerIds in game state
+    if (!room.state.disconnectedPlayerIds.includes(playerId)) {
+      room.state.disconnectedPlayerIds = [...room.state.disconnectedPlayerIds, playerId];
+    }
+
+    console.log(`[Room ${roomId}] Player ${playerName} marked as disconnected`);
+    return disconnectedPlayer;
+  }
+
+  /**
+   * Check if a player is currently in disconnected grace period
+   */
+  isPlayerDisconnected(roomId: string, playerId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    return room.disconnectedPlayers.has(playerId);
+  }
+
+  /**
+   * Get disconnected player entry
+   */
+  getDisconnectedPlayer(roomId: string, playerId: string): DisconnectedPlayer | undefined {
+    const room = this.rooms.get(roomId);
+    if (!room) return undefined;
+    return room.disconnectedPlayers.get(playerId);
+  }
+
+  /**
+   * Find a disconnected player by name (for reconnection)
+   */
+  findDisconnectedByName(roomId: string, playerName: string): DisconnectedPlayer | undefined {
+    const room = this.rooms.get(roomId);
+    if (!room) return undefined;
+
+    for (const [, disconnected] of room.disconnectedPlayers) {
+      if (disconnected.playerName === playerName) {
+        return disconnected;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Clear grace period timer and remove from disconnected tracking
+   */
+  clearGracePeriodTimer(roomId: string, playerId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    const disconnected = room.disconnectedPlayers.get(playerId);
+    if (disconnected) {
+      if (disconnected.gracePeriodTimer) {
+        clearTimeout(disconnected.gracePeriodTimer);
+      }
+      room.disconnectedPlayers.delete(playerId);
+
+      // Remove from disconnectedPlayerIds
+      room.state.disconnectedPlayerIds = room.state.disconnectedPlayerIds.filter(
+        id => id !== playerId
+      );
+
+      console.log(`[Room ${roomId}] Cleared grace period for ${disconnected.playerName}`);
+    }
+  }
+
+  /**
+   * Advance to next non-disconnected player, resetting phase to 'draw'
+   */
+  advanceToNextActivePlayer(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      console.log(`[Room ${roomId}] advanceToNextActivePlayer: room not found`);
+      return false;
+    }
+
+    const state = room.state;
+    const numPlayers = state.players.length;
+    let attempts = 0;
+    let nextIndex = (state.currentPlayerIndex + 1) % numPlayers;
+
+    console.log(`[Room ${roomId}] advanceToNextActivePlayer: starting from index ${state.currentPlayerIndex}, looking for next active player`);
+    console.log(`[Room ${roomId}] disconnectedPlayers map size: ${room.disconnectedPlayers.size}, keys: [${Array.from(room.disconnectedPlayers.keys()).join(', ')}]`);
+
+    // Find next player who is not disconnected
+    while (attempts < numPlayers) {
+      const nextPlayerId = state.players[nextIndex];
+      const isDisconnected = room.disconnectedPlayers.has(nextPlayerId);
+      console.log(`[Room ${roomId}] Checking player ${nextPlayerId} at index ${nextIndex}: disconnected=${isDisconnected}`);
+
+      if (!isDisconnected) {
+        room.state = {
+          ...state,
+          currentPlayerIndex: nextIndex,
+          gamePhase: 'draw',
+          buyRequests: [],
+          passedBuy: [],
+          buyJustProcessed: false,
+          lastDiscardTimestamp: null,  // Clear buy window when skipping turn
+          lastDiscarder: null
+        };
+        console.log(`[Room ${roomId}] Advanced to player ${state.playerNames[nextPlayerId]} (index ${nextIndex})`);
+        return true;
+      }
+      nextIndex = (nextIndex + 1) % numPlayers;
+      attempts++;
+    }
+
+    // All players disconnected - shouldn't happen but handle gracefully
+    console.log(`[Room ${roomId}] Warning: All players appear disconnected`);
+    return false;
+  }
+
+  /**
+   * Update a player's socket ID (for reconnection)
+   * Transfers all player state from old ID to new ID
+   */
+  updatePlayerSocketId(roomId: string, oldId: string, newId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const state = room.state;
+
+    // Check if old player exists
+    if (!state.players.includes(oldId)) {
+      return false;
+    }
+
+    // Update players array
+    const playerIndex = state.players.indexOf(oldId);
+    const newPlayers = [...state.players];
+    newPlayers[playerIndex] = newId;
+
+    // Transfer player name
+    const playerName = state.playerNames[oldId];
+    const { [oldId]: _, ...restNames } = state.playerNames;
+    const newPlayerNames = { ...restNames, [newId]: playerName };
+
+    // Transfer player state
+    const playerState = state.playerStates[oldId];
+    const { [oldId]: __, ...restStates } = state.playerStates;
+    const newPlayerStates = { ...restStates, [newId]: playerState };
+
+    // Update buy requests
+    const newBuyRequests = state.buyRequests.map(req =>
+      req.playerId === oldId ? { ...req, playerId: newId } : req
+    );
+
+    // Update passed buy
+    const newPassedBuy = state.passedBuy.map(id => id === oldId ? newId : id);
+
+    // Update continue clicked
+    const newContinueClicked = state.continueClicked.map(id => id === oldId ? newId : id);
+
+    // Update last discarder
+    const newLastDiscarder = state.lastDiscarder === oldId ? newId : state.lastDiscarder;
+
+    // Remove from disconnectedPlayerIds
+    const newDisconnectedPlayerIds = state.disconnectedPlayerIds.filter(id => id !== oldId);
+
+    room.state = {
+      ...state,
+      players: newPlayers,
+      playerNames: newPlayerNames,
+      playerStates: newPlayerStates,
+      buyRequests: newBuyRequests,
+      passedBuy: newPassedBuy,
+      continueClicked: newContinueClicked,
+      lastDiscarder: newLastDiscarder,
+      disconnectedPlayerIds: newDisconnectedPlayerIds
+    };
+
+    console.log(`[Room ${roomId}] Updated socket ID: ${oldId} -> ${newId} for ${playerName}`);
+    return true;
+  }
+
+  /**
+   * Convert a disconnected player to AI control
+   * Returns the new AI player ID
+   */
+  convertToAIPlayer(roomId: string, disconnectedPlayer: DisconnectedPlayer): string | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    const oldId = disconnectedPlayer.playerId;
+    const newId = `ai-converted-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+    // Update the player ID first (this preserves the original name)
+    if (!this.updatePlayerSocketId(roomId, oldId, newId)) {
+      return null;
+    }
+
+    // Add to AI player list
+    room.aiPlayerIds.push(newId);
+
+    // Clear from disconnected tracking
+    room.disconnectedPlayers.delete(oldId);
+
+    console.log(`[Room ${roomId}] Converted ${disconnectedPlayer.playerName} to AI control (${newId})`);
+    return newId;
   }
 }
 

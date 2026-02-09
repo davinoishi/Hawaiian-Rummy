@@ -30,6 +30,7 @@ export function createInitialGameState(): GameState {
     players: [],
     playerNames: {},
     playerStates: {},
+    disconnectedPlayerIds: [],
     gameStarted: false,
     gamePhase: 'lobby',
     currentPlayerIndex: 0,

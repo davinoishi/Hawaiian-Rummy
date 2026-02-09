@@ -36,14 +36,16 @@ export function broadcastGameState(
     return;
   }
 
-  console.log('[SERVER] Broadcasting to players:', state.players);
+  const currentPlayerId = state.players[state.currentPlayerIndex];
+  console.log('[SERVER] Broadcasting to players:', state.players, 'currentPlayer:', currentPlayerId, 'phase:', state.gamePhase);
+
   state.players.forEach(playerId => {
     const socket = io.sockets.sockets.get(playerId);
     console.log('[SERVER] Player', playerId, 'socket:', socket ? 'found' : 'NOT FOUND');
     if (socket) {
       const clientState = gameManager.getClientGameState(roomId, playerId);
       if (clientState) {
-        console.log('[SERVER] Emitting gameState to', playerId, 'phase:', clientState.gamePhase);
+        console.log('[SERVER] Emitting gameState to', playerId, '- isMyTurn:', clientState.isMyTurn, 'phase:', clientState.gamePhase, 'buyWindowActive:', clientState.buyWindowActive);
         socket.emit('gameState', clientState);
       }
     }

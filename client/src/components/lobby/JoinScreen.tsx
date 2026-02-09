@@ -15,6 +15,7 @@ export function JoinScreen() {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [showJoinInput, setShowJoinInput] = useState(false);
 
   const handleCreateRoom = () => {
     if (!name.trim()) {
@@ -25,8 +26,16 @@ export function JoinScreen() {
     playClick();
     setIsJoining(true);
     setPlayerName(name.trim());
-    // Server expects: (playerName, tutorialMode, callback)
     emit('createRoom', name.trim(), false);
+  };
+
+  const handleShowJoinInput = () => {
+    if (!name.trim()) {
+      setError('Please enter your name');
+      return;
+    }
+    playClick();
+    setShowJoinInput(true);
   };
 
   const handleJoinRoom = () => {
@@ -48,7 +57,6 @@ export function JoinScreen() {
   const handleStartTutorial = () => {
     playClick();
     setPlayerName('Tutorial Player');
-    // Server expects: (playerName, tutorialMode, callback)
     emit('createRoom', 'Tutorial Player', true);
   };
 
@@ -96,48 +104,68 @@ export function JoinScreen() {
           />
         </div>
 
-        {/* Create Room */}
-        <button
-          onClick={handleCreateRoom}
-          disabled={isJoining}
-          className="btn-primary w-full mb-4 py-3 text-lg"
-        >
-          {isJoining ? 'Creating...' : 'Create New Game'}
-        </button>
+        {/* Main buttons */}
+        {!showJoinInput ? (
+          <>
+            <button
+              onClick={handleCreateRoom}
+              disabled={isJoining}
+              className="btn-primary w-full mb-3 py-3 text-lg"
+            >
+              {isJoining ? 'Creating...' : 'Create New Game'}
+            </button>
 
-        {/* Divider */}
-        <div className="flex items-center my-6">
-          <div className="flex-1 border-t border-white/20" />
-          <span className="px-3 text-sm text-white/50">or</span>
-          <div className="flex-1 border-t border-white/20" />
-        </div>
+            <button
+              onClick={handleShowJoinInput}
+              disabled={isJoining}
+              className="btn-secondary w-full mb-6 py-3"
+            >
+              Join Existing Game
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Room code input */}
+            <div className="mb-4">
+              <label className="block text-sm text-emerald-200 mb-2">
+                Room Code
+              </label>
+              <input
+                type="text"
+                value={joinRoomId}
+                onChange={(e) => {
+                  setJoinRoomId(e.target.value.toUpperCase());
+                  setError('');
+                }}
+                placeholder="Enter room code"
+                className="input uppercase"
+                maxLength={6}
+                disabled={isJoining}
+                autoFocus
+              />
+            </div>
 
-        {/* Join Room */}
-        <div className="mb-4">
-          <label className="block text-sm text-emerald-200 mb-2">
-            Room Code
-          </label>
-          <input
-            type="text"
-            value={joinRoomId}
-            onChange={(e) => {
-              setJoinRoomId(e.target.value.toUpperCase());
-              setError('');
-            }}
-            placeholder="Enter room code"
-            className="input uppercase"
-            maxLength={6}
-            disabled={isJoining}
-          />
-        </div>
-
-        <button
-          onClick={handleJoinRoom}
-          disabled={isJoining || !joinRoomId.trim()}
-          className="btn-secondary w-full mb-6 py-3"
-        >
-          Join Game
-        </button>
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={() => {
+                  setShowJoinInput(false);
+                  setJoinRoomId('');
+                }}
+                disabled={isJoining}
+                className="btn-ghost flex-1 py-3"
+              >
+                Back
+              </button>
+              <button
+                onClick={handleJoinRoom}
+                disabled={isJoining || !joinRoomId.trim()}
+                className="btn-primary flex-1 py-3"
+              >
+                {isJoining ? 'Joining...' : 'Join'}
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Tutorial */}
         <div className="pt-6 border-t border-white/20">

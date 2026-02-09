@@ -13,7 +13,7 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 ### Game Mechanics
 - **Multi-Room Support**: Create or join independent game rooms for simultaneous games
 - 4 players per room (at least one human is required, and AI opponents will fill any open spots)
-- **AI Players**: Intelligent AI opponents (Alex-AI, Jordan-AI, Taylor-AI) automatically fill empty seats
+- **AI Players**: Intelligent AI opponents (Alex, Jordan, Taylor) automatically fill empty seats
 - 10 rounds with increasing difficulty
 - Complete buy mechanism with priority system
 - Sets, runs, wildcards (2s and Jokers), and layoff functionality
@@ -177,6 +177,7 @@ To test with multiple players:
 
 ## Recent Updates
 
+- **v2.1.0**: Player disconnect handling with 45-second grace period and AI takeover
 - **v2.0.0**: Migrated to TypeScript with separate client/server/shared architecture
 - Fixed click punch-through bug in wildcard position modal
 - Improved AI player decision-making
@@ -187,7 +188,6 @@ To test with multiple players:
 
 - Game history and statistics tracking
 - Saved games and resume functionality
-- Player reconnection after disconnect
 - Tournament mode
 - Custom game rules configuration
 - Enhanced AI difficulty levels

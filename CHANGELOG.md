@@ -2,6 +2,27 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [v2.1.0] - 2026-02-08
+
+### Player Disconnect Handling
+- **45-Second Grace Period**: When a player disconnects during an active game, they have 45 seconds to reconnect
+- **Turn Skip**: Disconnected player's turn is automatically skipped during the grace period
+- **Reconnection Support**: Players can reconnect within the grace period to regain control of their game
+- **AI Takeover**: If the grace period expires, an AI takes over the disconnected player's position
+- **Visual Indicators**: Disconnected players show countdown timer and warning badge in player info
+
+### UI Improvements
+- **Simplified Join Screen**: Streamlined lobby UI with Name, Create Game, and Join Game buttons
+- **Join Input Toggle**: Room code input only appears when "Join Existing Game" is clicked
+- **AI Player Labels**: Removed "-AI" suffix from AI player names (now using visual "AI" badge instead)
+- **AI Control Badge**: Clear purple "AI" indicator on AI-controlled players
+
+### Technical Changes
+- Added `DisconnectedPlayer` tracking in `game-manager.ts`
+- Added periodic server-side check to skip disconnected players' turns
+- Session persistence using localStorage for reconnection support
+- Socket handlers for `playerDisconnected`, `playerReconnected`, `playerTakenOverByAI` events
+
 ## [v2.0.0] - 2026-02-08
 
 ### Major Architecture Overhaul
@@ -131,7 +152,7 @@ All notable changes to Hawaiian Rummy will be documented in this file.
 ## [Phase 4] - 2025-01-17
 
 ### Added - AI Opponents
-- **AI Players**: Added three intelligent AI opponents (Alex-AI, Jordan-AI, Taylor-AI) that automatically fill empty seats in the lobby
+- **AI Players**: Added three intelligent AI opponents (Alex, Jordan, Taylor) that automatically fill empty seats in the lobby
 - AI players make strategic decisions including:
   - Melding sets and runs to meet round requirements
   - Buying discards when cards are useful

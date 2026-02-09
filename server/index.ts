@@ -137,9 +137,39 @@ io.on('connection', (socket) => {
     io,
     gameManager,
     logAnalytics,
-    spawnAIPlayers
+    spawnAIPlayers,
+    aiManager
   });
 });
+
+// ===== DISCONNECTED PLAYER TURN HANDLER =====
+// Periodically check if the current player is disconnected and skip their turn
+import { broadcastGameState } from './socket-handlers/game-handler.js';
+
+setInterval(() => {
+  for (const room of gameManager.getAllRooms()) {
+    const state = room.state;
+    if (!state.gameStarted) continue;
+    if (state.gamePhase === 'roundSummary' || state.gamePhase === 'gameOver') continue;
+
+    const currentPlayerId = state.players[state.currentPlayerIndex];
+    const isCurrentPlayerDisconnected = room.disconnectedPlayers.has(currentPlayerId);
+
+    if (isCurrentPlayerDisconnected) {
+      console.log(`[Room ${room.id}] Periodic check: Current player ${currentPlayerId} is disconnected, skipping turn`);
+
+      // Cancel any staged melds
+      if (state.gamePhase === 'meld') {
+        gameManager.processAction(room.id, { type: 'CANCEL_MELDS', playerId: currentPlayerId });
+      }
+
+      // Advance to next player
+      if (gameManager.advanceToNextActivePlayer(room.id)) {
+        broadcastGameState(io, gameManager, room.id);
+      }
+    }
+  }
+}, 1000); // Check every second
 
 // ===== START SERVER =====
 const PORT = process.env.PORT || 3001;

@@ -33,6 +33,13 @@ export function BuyActions() {
   useEffect(() => {
     const serverValue = buyWindowRemaining ?? 0;
 
+    // If buy window is not active, reset to 0
+    if (!buyWindowActive) {
+      setLocalRemaining(0);
+      setLastServerValue(0);
+      return;
+    }
+
     // Only reset if the server value increased (new buy window started)
     // or if it's significantly different (more than 1 second higher)
     if (serverValue > lastServerValue + 0.5) {
@@ -41,7 +48,7 @@ export function BuyActions() {
     setLastServerValue(serverValue);
 
     // Start countdown
-    if (buyWindowActive && serverValue > 0) {
+    if (serverValue > 0) {
       const interval = setInterval(() => {
         setLocalRemaining(prev => Math.max(0, prev - 0.1));
       }, 100);

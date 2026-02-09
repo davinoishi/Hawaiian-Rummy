@@ -12,6 +12,13 @@ import type {
   GamePhase
 } from '@shared/game-engine/types';
 
+// Disconnected player info for UI
+interface DisconnectedPlayerInfo {
+  playerId: string;
+  playerName: string;
+  gracePeriodEnds: number;
+}
+
 interface GameState extends Partial<ClientGameState> {
   // Connection state
   roomId: string | null;
@@ -33,6 +40,9 @@ interface GameState extends Partial<ClientGameState> {
   } | null;
   turnOrderCountdown: number | null;
 
+  // Disconnected players tracking
+  disconnectedPlayers: DisconnectedPlayerInfo[];
+
   // Actions
   setRoomId: (roomId: string | null) => void;
   setPlayerName: (name: string) => void;
@@ -41,6 +51,9 @@ interface GameState extends Partial<ClientGameState> {
   updateGameState: (state: ClientGameState) => void;
   updateTurnOrder: (data: GameState['turnOrderData']) => void;
   setTurnOrderCountdown: (count: number | null) => void;
+  addDisconnectedPlayer: (info: DisconnectedPlayerInfo) => void;
+  removeDisconnectedPlayer: (playerId: string) => void;
+  clearDisconnectedPlayers: () => void;
   reset: () => void;
 }
 
@@ -51,6 +64,7 @@ const initialState = {
   appPhase: 'join' as const,
   turnOrderData: null,
   turnOrderCountdown: null,
+  disconnectedPlayers: [],
 
   // Game state
   players: [],
@@ -114,6 +128,19 @@ export const useGameStore = create<GameState>((set) => ({
   }),
 
   setTurnOrderCountdown: (count) => set({ turnOrderCountdown: count }),
+
+  addDisconnectedPlayer: (info) => set((state) => ({
+    disconnectedPlayers: [
+      ...state.disconnectedPlayers.filter(p => p.playerId !== info.playerId),
+      info
+    ]
+  })),
+
+  removeDisconnectedPlayer: (playerId) => set((state) => ({
+    disconnectedPlayers: state.disconnectedPlayers.filter(p => p.playerId !== playerId)
+  })),
+
+  clearDisconnectedPlayers: () => set({ disconnectedPlayers: [] }),
 
   reset: () => set(initialState)
 }));

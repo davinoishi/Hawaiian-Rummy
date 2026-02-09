@@ -80,6 +80,7 @@ export interface GameState {
   players: string[];
   playerNames: Record<string, string>;
   playerStates: Record<string, PlayerState>;
+  disconnectedPlayerIds: string[];
 
   // Game progression
   gameStarted: boolean;
@@ -240,6 +241,7 @@ export interface ClientPlayer {
   wins: number; // Alias for roundsWon for backwards compatibility
   roundScores: number[];
   isMe: boolean;
+  isAI: boolean;
   hasMetRequirements: boolean;
 }
 
