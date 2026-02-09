@@ -2,6 +2,34 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [v2.0.0] - 2026-02-08
+
+### Major Architecture Overhaul
+- **TypeScript Migration**: Complete rewrite from JavaScript to TypeScript
+- **Modular Architecture**: Separated codebase into `client/`, `server/`, and `shared/` directories
+- **React with Vite**: Modern React 18 frontend built with Vite for fast development
+- **Zustand State Management**: Replaced React useState with Zustand stores for cleaner state management
+- **Shared Game Engine**: Game logic now shared between client and server in `shared/game-engine/`
+
+### New Project Structure
+```
+├── client/           # React frontend (TypeScript, Vite, Tailwind)
+├── server/           # Express backend (TypeScript, tsx)
+└── shared/           # Shared game engine and types
+```
+
+### Bug Fixes
+- **Wildcard Modal Click Punch-Through**: Fixed critical bug where clicking an arrangement option in the wildcard position modal would also trigger the "Create Run" button behind it, causing "Select at least 3 cards" error
+  - Added `event.stopPropagation()` to all modal button click handlers
+  - Affects `WildcardPositionModal.tsx`
+
+### Technical Changes
+- Server now runs with `tsx` for TypeScript execution
+- Client built with Vite and outputs to `public/assets/`
+- Type definitions in `shared/game-engine/types.ts`
+- Socket handlers organized in `server/socket-handlers/`
+- AI logic moved to `server/ai/`
+
 ## [Phase 5] - 2025-12-08
 
 ### Mobile UX Improvements - Phase 4
@@ -128,7 +156,7 @@ All notable changes to Hawaiian Rummy will be documented in this file.
 - **AI Discard Logic**: Fixed AI to check if discard helps ANY opponent (not just next player)
 
 ### Technical Changes
-- Added `aiPlayer.js` with comprehensive AI logic
+- Added AI logic with comprehensive strategy
 - Updated server buy validation to prevent sequential buys
 - Refactored UI to use absolute positioning for clockwise layout
 

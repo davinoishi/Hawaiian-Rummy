@@ -2,15 +2,44 @@
 
 ## Overview
 
-This Hawaiian Rummy game now features intelligent AI players that automatically fill empty slots to ensure 4-player games.
+Hawaiian Rummy features intelligent AI players that automatically fill empty slots to ensure 4-player games. The AI system has been completely rewritten in TypeScript as part of the v2.0.0 architecture overhaul.
+
+## Architecture
+
+### File Structure
+
+```
+server/
+├── ai/
+│   ├── index.ts              # AI module exports
+│   ├── ai-manager.ts         # AI player lifecycle management
+│   ├── ai-strategy.ts        # Base strategy interface
+│   └── strategies/
+│       └── standard-ai.ts    # Default AI strategy implementation
+```
+
+### Key Components
+
+1. **AIManager** (`ai-manager.ts`)
+   - Manages AI player instances
+   - Handles spawning and cleanup
+   - Coordinates AI turns with game state
+
+2. **AIStrategy** (`ai-strategy.ts`)
+   - Defines the interface for AI decision-making
+   - Allows for multiple strategy implementations
+
+3. **StandardAI** (`strategies/standard-ai.ts`)
+   - Default AI implementation
+   - Handles all game phases: draw, meld, layoff, discard
 
 ## How It Works
 
 ### Auto-Join System
 
-1. When a human player joins the lobby, the server automatically spawns AI players
-2. AI players fill remaining slots up to 4 total players
-3. AI players have names: "AI Player 1", "AI Player 2", "AI Player 3"
+1. When a human player joins the lobby, the server checks player count
+2. AI players are spawned to fill remaining slots (up to 4 total)
+3. AI players have names: "Alex-AI", "Jordan-AI", "Taylor-AI"
 
 ### AI Decision-Making
 
@@ -27,28 +56,39 @@ The AI uses strategic heuristics to play competently:
 - Passes when card isn't useful
 
 #### Meld Phase
-- **IMPORTANT FIX**: Only creates melds if it can meet ALL round requirements
+- **IMPORTANT**: Only creates melds if it can meet ALL round requirements
 - Prevents partial melding that would cause stuck turns
 - Uses exact card counts needed for requirements
 - Matches set sizes (e.g., 3 cards for "set of 3")
 - Matches run sizes (e.g., 7 cards for "run of 7")
 
 #### Discard Phase
-- **IMPORTANT FIX**: Cancels incomplete melds before discarding
-- This prevents the "Meld requirements not met" error
+- Cancels incomplete melds before discarding if needed
 - Chooses to discard high-point, low-utility cards
 - Keeps wildcards and useful cards for future melds
+- Avoids discarding cards that would help opponents
 
 #### Layoff Phase
 - After meeting requirements, tries to layoff high-value cards
-- Targets opponent melds to reduce hand points
+- Targets any player's melds to reduce hand points
 - Prioritizes getting rid of Jokers (50 pts) and 2s (20 pts) first
 
-## Key Files
+## Type Definitions
 
-- `aiPlayer.js` - Main AI player class with decision logic
-- `server.js` - Modified to spawn/manage AI players
-- `testAI.js` - Test script to verify AI integration
+Key types from `shared/game-engine/types.ts`:
+
+```typescript
+interface AIPlayerConfig {
+  name: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  decisionDelay?: number;
+}
+
+interface AIDecision {
+  action: GameAction;
+  reasoning?: string;
+}
+```
 
 ## Bug Fixes Applied
 
@@ -56,121 +96,81 @@ The AI uses strategic heuristics to play competently:
 
 **Problem**: AI would create partial melds that didn't meet round requirements, then couldn't discard because the server validates meld completion.
 
-**Error Message**:
-```
-Meld requirements not met. Complete your melds or cancel them before discarding.
-```
+**Solution**: Two-part fix:
 
-**Solution**: Two-part fix in `aiPlayer.js`:
-
-1. **Smart Meld Creation** (`findBestMelds` function, lines 366-422):
-   - Only creates melds if ALL requirements can be met
-   - Uses exact card counts specified by round requirements
-   - Returns empty array if can't complete full requirements
-   - Prevents partial melding entirely
-
-2. **Fallback Cancel Logic** (`handleDiscardPhase` function, lines 185-222):
-   - Checks if player has incomplete melds before discarding
-   - Automatically cancels melds that don't meet requirements
-   - Then discards safely
-   - Acts as safety net if meld logic fails
+1. **Smart Meld Creation**: Only creates melds if ALL requirements can be met
+2. **Fallback Cancel Logic**: Automatically cancels incomplete melds before discarding
 
 ### Issue 2: AI Not Continuing After Round Ends
 
-**Problem**: AI players would not click "continue" button after round summary, causing the game to get stuck.
+**Problem**: AI players would not continue after round summary.
 
-**Solution**: Special case handling in `aiPlayer.js` (lines 59-73):
-
-1. **Early Phase Detection**:
-   - Checks for `roundSummary` phase at the very beginning of `handleGameState()`
-   - Bypasses normal turn checking and state tracking
-
-2. **Unique State Signature**:
-   - Uses `roundSummary-{roundNumber}` signature
-   - Ensures each round is processed exactly once
-   - Prevents duplicate continue requests
-
-3. **Immediate Processing**:
-   - No 1-second delay for round continuation (only 500ms)
-   - Emits `continueToNextRound` event
-   - Allows game to flow smoothly between rounds
+**Solution**: Special case handling for `roundSummary` phase with unique state signature to prevent duplicate continue requests.
 
 ### Issue 3: AI Helping Opponents with Discards
 
-**Problem**: AI would discard high-point cards without considering if they would help the next player complete melds.
+**Problem**: AI would discard cards that help opponents complete melds.
 
-**Solution**: Smart discard analysis in `aiPlayer.js` (lines 520-602):
+**Solution**: Smart discard analysis that:
+- Checks if card can layoff on any opponent's melds
+- Avoids discarding cards matching opponent's set ranks
+- Avoids discarding cards that extend opponent's runs
 
-1. **Opponent Analysis** (`wouldHelpOpponent` function):
-   - Checks if card can layoff on next player's melds
-   - Avoids discarding cards matching opponent's set ranks
-   - Avoids discarding cards that could extend opponent's runs (same suit + adjacent values)
+## Configuration
 
-2. **Discard Penalty System** (`chooseDiscardCard` function):
-   - Applies -200 point penalty to cards that would help opponents
-   - Prioritizes keeping opponent-helpful cards over high-point cards
-   - Strategically chooses discards to minimize helping next player
+### AI Settings
 
-**Code Location**:
-```javascript
-// Line 544: Check if card would help next player
-const helpsNextPlayer = this.wouldHelpOpponent(card, nextPlayer);
-const opponentPenalty = helpsNextPlayer ? -200 : 0;
+Configure in the AIManager or when spawning AI players:
+
+```typescript
+const aiConfig = {
+  name: 'Alex-AI',
+  difficulty: 'medium',
+  decisionDelay: 1000  // Thinking time in ms
+};
+```
+
+### AI Names
+
+Default AI player names are defined in the AIManager:
+
+```typescript
+const AI_NAMES = ['Alex-AI', 'Jordan-AI', 'Taylor-AI'];
+```
+
+## Server Integration
+
+The AI system integrates with the game through Socket.IO:
+
+```typescript
+// server/index.ts
+import { AIManager } from './ai';
+
+const aiManager = new AIManager(io, gameManager);
+
+// When game starts with fewer than 4 players
+aiManager.spawnAIPlayers(roomId, 4 - humanPlayerCount);
 ```
 
 ## Testing
 
-Run the test script:
-```bash
-node testAI.js
-```
-
-Expected output:
-- AI players auto-join lobby
-- Game starts with 4 players
-- AI players make intelligent moves
-- No stuck turns or errors
-
-## Starting the Server
+Run the game with AI players:
 
 ```bash
 npm start
 ```
 
-The server runs on `http://localhost:3001`
-
-## Configuration
-
-### AI Settings (in `aiPlayer.js`)
-
-```javascript
-this.decisionDelay = 1000; // AI "thinking" time in ms
-```
-
-### AI Names (in `server.js`)
-
-```javascript
-const AI_NAMES = ['AI Player 1', 'AI Player 2', 'AI Player 3'];
-```
-
-You can customize these to give AI players different names.
-
-## How AI Players Are Managed
-
-### Spawning
-- Triggered when human joins lobby
-- Triggered when game starts with < 4 players
-- Creates socket.io client connections
-
-### Cleanup
-- AI players disconnect when game resets
-- Removes all AI instances on `resetGame()`
+Then:
+1. Open browser to http://localhost:3000
+2. Create a room
+3. Click "Start Game"
+4. AI players automatically join and play
 
 ## Future Improvements
 
 Potential enhancements:
-- Difficulty levels (easy/medium/hard)
+- Multiple difficulty levels (easy/medium/hard)
 - More sophisticated meld optimization
-- Wildcard replacement strategy in runs
 - Opponent hand tracking and probability analysis
-- Strategic discard choices (avoid giving opponents useful cards)
+- Learning from player patterns
+- Adaptive strategy based on game state
