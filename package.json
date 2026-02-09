@@ -1,11 +1,15 @@
 {
-  "name": "hawaiian-rummy-server",
-  "version": "1.1.1",
-  "description": "",
-  "main": "index.js",
+  "name": "hawaiian-rummy",
+  "version": "2.0.0",
+  "description": "Hawaiian Rummy card game",
+  "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "tsx watch server/index.ts",
+    "start": "node --import tsx server/index.ts",
+    "start:old": "node server.js",
+    "build": "tsc -p tsconfig.server.json",
+    "client:dev": "cd client && npm run dev",
+    "client:build": "cd client && npm run build"
   },
   "keywords": [],
   "author": "",
@@ -13,7 +17,13 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
   }
 }

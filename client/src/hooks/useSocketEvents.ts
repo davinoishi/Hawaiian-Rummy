@@ -1,0 +1,239 @@
+/**
+ * useSocketEvents - Hook for setting up socket event listeners
+ */
+
+import { useEffect, useRef } from 'react';
+import { useSocketStore } from '../store/socket-store';
+import { useGameStore } from '../store/game-store';
+import { useUIStore } from '../store/ui-store';
+import { useAudio } from './useAudio';
+import { useHaptics } from './useHaptics';
+import type { ClientGameState } from '@shared/game-engine/types';
+
+interface LobbyUpdate {
+  roomId: string;
+  players: Array<{ id: string; name: string }>;
+  gameStarted: boolean;
+}
+
+interface TurnOrderData {
+  phase: string;
+  position: number;
+  justSelected?: string;
+  selectedOrder: Array<{ playerId: string; name: string; position: number }>;
+  remainingPlayers: Array<{ playerId: string; name: string }>;
+}
+
+interface ErrorData {
+  message: string;
+}
+
+interface BuyNotification {
+  type: 'granted' | 'denied' | 'info';
+  message: string;
+}
+
+export function useSocketEvents() {
+  const socket = useSocketStore((state) => state.socket);
+
+  // Store callbacks in refs to avoid effect re-runs
+  const callbacksRef = useRef({
+    updateLobby: useGameStore.getState().updateLobby,
+    updateGameState: useGameStore.getState().updateGameState,
+    updateTurnOrder: useGameStore.getState().updateTurnOrder,
+    setTurnOrderCountdown: useGameStore.getState().setTurnOrderCountdown,
+    setAppPhase: useGameStore.getState().setAppPhase,
+    setBuyNotification: useUIStore.getState().setBuyNotification,
+    setErrorMessage: useUIStore.getState().setErrorMessage,
+    setShowConfetti: useUIStore.getState().setShowConfetti,
+    clearSelection: useUIStore.getState().clearSelection,
+    setWildcardPositionPrompt: useUIStore.getState().setWildcardPositionPrompt,
+    setMeldWildcardPositionPrompt: useUIStore.getState().setMeldWildcardPositionPrompt
+  });
+
+  // Audio and haptics
+  const audio = useAudio();
+  const haptics = useHaptics();
+  const audioRef = useRef(audio);
+  const hapticsRef = useRef(haptics);
+
+  // Keep refs updated
+  audioRef.current = audio;
+  hapticsRef.current = haptics;
+
+  // Track if listeners are registered
+  const listenersRegistered = useRef(false);
+
+  useEffect(() => {
+    if (!socket) {
+      console.log('[useSocketEvents] No socket available');
+      return;
+    }
+
+    // Prevent duplicate listener registration
+    if (listenersRegistered.current) {
+      console.log('[useSocketEvents] Listeners already registered');
+      return;
+    }
+
+    console.log('[useSocketEvents] Registering event listeners for socket:', socket.id);
+    listenersRegistered.current = true;
+
+    const callbacks = callbacksRef.current;
+
+    // Lobby events
+    const handleLobbyUpdate = (data: LobbyUpdate) => {
+      console.log('[CLIENT] lobbyUpdate received:', data);
+      callbacks.updateLobby(data);
+    };
+
+    const handleGameStarted = () => {
+      console.log('[CLIENT] gameStarted received');
+      callbacks.setAppPhase('playing');
+    };
+
+    // Turn order events
+    const handleTurnOrder = (data: TurnOrderData) => {
+      console.log('[CLIENT] turnOrderUpdate received:', data.phase);
+      callbacks.updateTurnOrder(data);
+    };
+
+    const handleTurnOrderCountdown = (count: number) => {
+      console.log('[CLIENT] turnOrderCountdown received:', count);
+      callbacks.setTurnOrderCountdown(count);
+    };
+
+    // Game state events
+    const handleGameState = (state: ClientGameState) => {
+      console.log('[CLIENT] gameState received, phase:', state.gamePhase);
+      const previousState = useGameStore.getState();
+      const wasMyTurn = previousState.isMyTurn;
+
+      callbacks.updateGameState(state);
+
+      // Play turn start sound/haptic
+      if (state.isMyTurn && !wasMyTurn) {
+        audioRef.current.playTurnStart();
+        hapticsRef.current.turnStart();
+      }
+
+      // Handle round end
+      if (state.gamePhase === 'roundSummary') {
+        audioRef.current.playRoundEnd();
+        hapticsRef.current.roundEnd();
+      }
+
+      // Handle game over
+      if (state.gamePhase === 'gameOver') {
+        if (state.isWinner) {
+          audioRef.current.playGameWin();
+          hapticsRef.current.gameWin();
+          callbacks.setShowConfetti(true);
+        }
+      }
+    };
+
+    // Buy events
+    const handleBuyNotification = (data: BuyNotification) => {
+      callbacks.setBuyNotification(data);
+
+      if (data.type === 'granted') {
+        audioRef.current.playBuyGranted();
+        hapticsRef.current.buyGranted();
+      } else if (data.type === 'denied') {
+        audioRef.current.playBuyDenied();
+        hapticsRef.current.buyDenied();
+      }
+
+      // Auto-clear notification
+      setTimeout(() => {
+        callbacks.setBuyNotification(null);
+      }, 3000);
+    };
+
+    // Error events - server sends string, not object
+    const handleError = (data: string | ErrorData) => {
+      const message = typeof data === 'string' ? data : data.message;
+      callbacks.setErrorMessage(message);
+      audioRef.current.playError();
+      hapticsRef.current.error();
+
+      // Auto-clear error
+      setTimeout(() => {
+        callbacks.setErrorMessage(null);
+      }, 4000);
+    };
+
+    // Action feedback events
+    const handleMeldCreated = () => {
+      callbacks.clearSelection();
+    };
+
+    const handleActionRejected = (data: ErrorData) => {
+      handleError(data);
+    };
+
+    // Wildcard position prompts
+    const handleNeedMeldWildcardPosition = (data: {
+      cardIds: string[];
+      type: 'set' | 'run';
+      arrangements: Array<{ sequence: string; description?: string }>;
+    }) => {
+      console.log('[CLIENT] needMeldWildcardPosition received:', data);
+      callbacks.setMeldWildcardPositionPrompt({
+        cardIds: data.cardIds,
+        type: data.type,
+        arrangements: data.arrangements
+      });
+    };
+
+    const handleNeedWildcardPosition = (data: {
+      validPositions: string[];
+      cardId: string;
+      meldOwnerId: string;
+      meldIndex: number;
+      wildcardToReplace?: string;
+    }) => {
+      console.log('[CLIENT] needWildcardPosition received:', data);
+      callbacks.setWildcardPositionPrompt({
+        validPositions: data.validPositions,
+        cardId: data.cardId,
+        meldOwnerId: data.meldOwnerId,
+        meldIndex: data.meldIndex,
+        wildcardToReplace: data.wildcardToReplace
+      });
+    };
+
+    // Register event listeners
+    socket.on('lobbyUpdate', handleLobbyUpdate);
+    socket.on('gameStarted', handleGameStarted);
+    socket.on('turnOrderUpdate', handleTurnOrder);
+    socket.on('turnOrderCountdown', handleTurnOrderCountdown);
+    socket.on('gameState', handleGameState);
+    socket.on('buyNotification', handleBuyNotification);
+    socket.on('error', handleError);
+    socket.on('meldCreated', handleMeldCreated);
+    socket.on('actionRejected', handleActionRejected);
+    socket.on('needMeldWildcardPosition', handleNeedMeldWildcardPosition);
+    socket.on('needWildcardPosition', handleNeedWildcardPosition);
+
+    console.log('[useSocketEvents] All listeners registered');
+
+    // Cleanup
+    return () => {
+      console.log('[useSocketEvents] Cleaning up listeners');
+      listenersRegistered.current = false;
+      socket.off('lobbyUpdate', handleLobbyUpdate);
+      socket.off('gameStarted', handleGameStarted);
+      socket.off('turnOrderUpdate', handleTurnOrder);
+      socket.off('turnOrderCountdown', handleTurnOrderCountdown);
+      socket.off('gameState', handleGameState);
+      socket.off('buyNotification', handleBuyNotification);
+      socket.off('error', handleError);
+      socket.off('meldCreated', handleMeldCreated);
+      socket.off('actionRejected', handleActionRejected);
+      socket.off('needMeldWildcardPosition', handleNeedMeldWildcardPosition);
+      socket.off('needWildcardPosition', handleNeedWildcardPosition);
+    };
+  }, [socket]); // Only depend on socket
+}
