@@ -5,8 +5,13 @@
 
 import { Server, Socket } from 'socket.io';
 import { GameManager } from '../game-manager';
+import { profileManager } from '../profile-manager.js';
 import { AI_NAMES } from '../../shared/game-engine/constants';
-import type { Card, Rank, Suit } from '../../shared/game-engine/types';
+import type { Card, Rank, Suit, GameState } from '../../shared/game-engine/types';
+import type { GamePlayerResult } from '../../shared/profile-types.js';
+
+// Track which games have been recorded to avoid duplicates
+const recordedGames = new Set<string>();
 
 export interface GameHandlerDeps {
   io: Server;
@@ -20,6 +25,93 @@ export interface GameHandlerDeps {
  * Sleep helper
  */
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Record completed game stats to profiles
+ */
+function recordGameCompletion(
+  roomId: string,
+  state: GameState,
+  gameManager: GameManager
+): void {
+  // Generate a unique game ID
+  const gameId = `game-${roomId}-${Date.now()}`;
+
+  // Check if already recorded
+  if (recordedGames.has(gameId.slice(0, -13))) { // Check without timestamp
+    console.log(`[Room ${roomId}] Game already recorded, skipping`);
+    return;
+  }
+  recordedGames.add(roomId);
+
+  console.log(`[Room ${roomId}] Recording completed game...`);
+
+  // Get final scores and determine placements
+  const playerResults: { playerId: string; score: number; roundsWon: number }[] = [];
+
+  for (const playerId of state.players) {
+    const playerState = state.playerStates[playerId];
+    playerResults.push({
+      playerId,
+      score: playerState.score,
+      roundsWon: playerState.roundsWon
+    });
+  }
+
+  // Sort by score (lowest is best)
+  playerResults.sort((a, b) => a.score - b.score);
+
+  // Build GamePlayerResult array - only include players with valid profiles
+  const resultsWithProfiles: GamePlayerResult[] = [];
+
+  for (const result of playerResults) {
+    const isAI = gameManager.isAIPlayer(roomId, result.playerId);
+    const playerName = state.playerNames[result.playerId] || 'Unknown';
+    const placement = playerResults.indexOf(result) + 1;
+
+    let profileId: string | undefined;
+
+    if (isAI) {
+      // AI players have pre-created profiles
+      profileId = profileManager.getAIProfileId(playerName.replace('🤖 ', ''));
+    } else {
+      // Human players - check if they have a profile ID stored
+      profileId = gameManager.getPlayerProfileId(roomId, result.playerId);
+    }
+
+    // Only include players with valid profiles
+    if (profileId) {
+      resultsWithProfiles.push({
+        profileId,
+        nickname: playerName,
+        isAI,
+        finalScore: result.score,
+        placement,
+        won: placement === 1,
+        goingOutCount: result.roundsWon,
+        roundsPlayed: state.currentRound + 1
+      });
+    }
+  }
+
+  if (resultsWithProfiles.length > 0) {
+    const totalRounds = state.currentRound + 1;
+    const durationMinutes = 0; // TODO: Track actual game duration
+    const aiCount = resultsWithProfiles.filter(r => r.isAI).length;
+    const humanCount = resultsWithProfiles.filter(r => !r.isAI).length;
+
+    profileManager.recordCompletedGame(gameId, resultsWithProfiles, totalRounds, durationMinutes);
+    console.log(`[Room ${roomId}] Recorded game stats for ${resultsWithProfiles.length} players (${aiCount} AI, ${humanCount} human)`);
+  } else {
+    console.log(`[Room ${roomId}] No players with profiles to record`);
+  }
+
+  // Clean up old recorded game IDs (keep last 1000)
+  if (recordedGames.size > 1000) {
+    const toDelete = Array.from(recordedGames).slice(0, 500);
+    toDelete.forEach(id => recordedGames.delete(id));
+  }
+}
 
 /**
  * Broadcast game state to all players in a room
@@ -38,6 +130,11 @@ export function broadcastGameState(
 
   const currentPlayerId = state.players[state.currentPlayerIndex];
   console.log('[SERVER] Broadcasting to players:', state.players, 'currentPlayer:', currentPlayerId, 'phase:', state.gamePhase);
+
+  // Record game completion when game ends
+  if (state.gamePhase === 'gameOver' && !state.tutorialMode) {
+    recordGameCompletion(roomId, state, gameManager);
+  }
 
   state.players.forEach(playerId => {
     const socket = io.sockets.sockets.get(playerId);

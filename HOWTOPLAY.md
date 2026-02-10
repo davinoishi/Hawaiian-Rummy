@@ -24,11 +24,20 @@ The game uses **3 standard decks plus 6 jokers** (162 cards total):
 
 ## Game Setup
 
+### Online Mode
 1. **Join the Lobby**: Enter your name and join the game
-2. **Wait for Players**: 2-4 players can join
-3. **Start Game**: Any player can start when ready (minimum 2 players)
-4. **Deal**: Each player receives 9 cards
-5. One card is placed face-up in the discard pile to start
+2. **Create or Join a Room**: Create a new room (optionally with a password) or join using a room code
+3. **Wait for Players**: 2-4 players can join
+4. **Start Game**: Any player can start when ready (AI fills empty spots)
+5. **Deal**: Each player receives 9 cards
+6. One card is placed face-up in the discard pile to start
+
+### Offline Mode (Play vs AI)
+1. When offline or using `?offline=true` in the URL, offline mode activates automatically
+2. Enter your name and select the number of AI opponents (1-3)
+3. Click "Play vs AI" to start immediately
+4. The game runs entirely in your browser - no internet required
+5. Note: Offline games are not saved if you close the browser
 
 ## Round Requirements
 
@@ -174,6 +183,18 @@ After 10 rounds:
 3. Click on the meld where you want to place the card
 4. If the meld is a run with wildcards, you'll be prompted to replace or add normally
 
+### Using Chat
+1. Click the chat bubble icon in the bottom-right corner
+2. Type your message in the input field
+3. Press Enter or click Send
+4. A notification badge shows unread messages when chat is closed
+
+### Settings
+1. Click the gear icon to open settings
+2. **Theme**: Choose Light, Dark, or System (follows your device preference)
+3. **Sounds**: Toggle sound effects and adjust volume
+4. **Haptics**: Toggle vibration feedback on supported devices
+
 ## Game Controls Reference
 
 | Button | When Available | Action |
@@ -198,7 +219,7 @@ A: No, you can only create the exact number of sets and runs specified for each 
 A: No, you lay off one card at a time.
 
 **Q: What happens if I disconnect?**
-A: Currently, disconnected players cannot reconnect. This feature is planned for future updates.
+A: You have a 45-second grace period to reconnect. During this time, AI will take over your turns. If you don't reconnect in time, you're removed from the game.
 
 **Q: Can I rearrange my melds after creating them?**
 A: No, but you can use "Cancel Melding" to return all cards to your hand and try again.
@@ -214,6 +235,18 @@ A: The player closest to the current player (next in turn order) has priority.
 
 **Q: Can wildcards be laid off?**
 A: Yes, wildcards can be added to any meld like regular cards.
+
+**Q: How do I play offline?**
+A: If you lose internet connection or add `?offline=true` to the URL, the game switches to offline mode where you can play against AI opponents.
+
+**Q: How do I use the chat?**
+A: Click the chat icon in the bottom-right corner during a game. Type your message and press Enter or click Send.
+
+**Q: How do I invite friends to a private room?**
+A: Create a room with a password, then click "Copy Invite Link". Share this link with friends - it includes both the room code and password.
+
+**Q: Can I rematch after the game ends?**
+A: Yes! After the game ends, click "Rematch" and wait for other players to also click. When all players vote for rematch, you'll return to the lobby with the same group.
 
 ---
 

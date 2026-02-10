@@ -245,73 +245,48 @@ export function sortRunCards(cards: Card[], wildcardPlacement?: number | 'beginn
 
   if (nonWildCards.length === 0) return cards;
 
+  // Get all valid arrangements
+  const arrangements = getPossibleRunArrangements(cards);
+
+  // If no valid arrangements, fall back to basic sorting
+  if (arrangements.length === 0) {
+    const aceHigh = shouldAceBeHigh(nonWildCards);
+    const sorted = sortCardsByRank(nonWildCards, aceHigh);
+    return [...sorted, ...wildCards];
+  }
+
   // If wildcardPlacement is a number, use the specific arrangement
   if (typeof wildcardPlacement === 'number') {
-    const arrangements = getPossibleRunArrangements(cards);
     if (wildcardPlacement >= 0 && wildcardPlacement < arrangements.length) {
       return sortCardsToMatchArrangement(cards, arrangements[wildcardPlacement]);
     }
   }
 
-  // Determine if Ace should be high
-  const aceHigh = shouldAceBeHigh(nonWildCards);
+  // For 'beginning' or 'end' preference, find matching arrangement
+  if (wildcardPlacement === 'beginning' || wildcardPlacement === 'end') {
+    const aceHigh = shouldAceBeHigh(nonWildCards);
+    const sorted = sortCardsByRank(nonWildCards, aceHigh);
+    const lowestNonWildVal = getRankValue(sorted[0].rank, aceHigh && sorted[0].rank === 'A');
+    const highestNonWildVal = getRankValue(sorted[sorted.length - 1].rank, aceHigh && sorted[sorted.length - 1].rank === 'A');
 
-  const sorted = sortCardsByRank(nonWildCards, aceHigh);
-
-  const result: Card[] = [];
-  const usedWilds: Card[] = [];
-
-  // Fill gaps between non-wild cards first
-  for (let i = 0; i < sorted.length; i++) {
-    if (i > 0) {
-      let prevVal = getRankValue(sorted[i - 1].rank, aceHigh && sorted[i - 1].rank === 'A');
-      let currVal = getRankValue(sorted[i].rank, aceHigh && sorted[i].rank === 'A');
-
-      const gap = currVal - prevVal - 1;
-      for (let j = 0; j < gap && usedWilds.length < wildCards.length; j++) {
-        result.push(wildCards[usedWilds.length]);
-        usedWilds.push(wildCards[usedWilds.length]);
+    // Find arrangement that matches the preference
+    let bestArrangement = arrangements[0];
+    for (const arr of arrangements) {
+      if (wildcardPlacement === 'beginning' && arr.startValue < lowestNonWildVal) {
+        bestArrangement = arr;
+        break;
+      }
+      if (wildcardPlacement === 'end' && arr.endValue > highestNonWildVal) {
+        bestArrangement = arr;
+        break;
       }
     }
-
-    result.push(sorted[i]);
+    return sortCardsToMatchArrangement(cards, bestArrangement);
   }
 
-  // Determine where to place remaining wildcards
-  let placeAtBeginning = false;
-
-  if (wildcardPlacement === 'beginning') {
-    placeAtBeginning = true;
-  } else if (wildcardPlacement === 'end') {
-    placeAtBeginning = false;
-  } else {
-    // Auto-determine based on run position
-    let lowestVal = getRankValue(sorted[0].rank, aceHigh && sorted[0].rank === 'A');
-    let highestVal = getRankValue(sorted[sorted.length - 1].rank, aceHigh && sorted[sorted.length - 1].rank === 'A');
-
-    const hasAce = nonWildCards.some(c => c.rank === 'A');
-
-    // Check if run is at the top (can't extend higher)
-    const atTop = highestVal === ACE_HIGH_VALUE || (aceHigh && hasAce);
-    // Check if run is at the bottom (can't extend lower)
-    const atBottom = lowestVal === 1 || (!aceHigh && hasAce) || lowestVal === 3;
-
-    if (atTop && !atBottom) {
-      placeAtBeginning = true;
-    } else if (atBottom && !atTop) {
-      placeAtBeginning = false;
-    } else {
-      placeAtBeginning = false;
-    }
-  }
-
-  // Place remaining wildcards
-  const remainingWilds = wildCards.slice(usedWilds.length);
-  if (placeAtBeginning) {
-    return [...remainingWilds, ...result];
-  } else {
-    return [...result, ...remainingWilds];
-  }
+  // Auto mode: use the first valid arrangement (which properly distributes wildcards)
+  // This ensures wildcards are placed at their logical positions in the sequence
+  return sortCardsToMatchArrangement(cards, arrangements[0]);
 }
 
 /**
@@ -325,6 +300,7 @@ export function getValidWildcardPositions(meld: Meld): ('beginning' | 'end')[] {
   }
 
   const nonWildCards = getNonWildcards(meld.cards);
+  const wildCards = getWildcards(meld.cards);
 
   if (nonWildCards.length === 0) {
     return [];
@@ -341,27 +317,58 @@ export function getValidWildcardPositions(meld: Meld): ('beginning' | 'end')[] {
     })
     .sort((a, b) => a - b);
 
-  const minValue = nonWildValues[0];
-  const maxValue = nonWildValues[nonWildValues.length - 1];
+  const minNonWild = nonWildValues[0];
+  const maxNonWild = nonWildValues[nonWildValues.length - 1];
+
+  // Calculate gaps between non-wild cards (these are filled by wildcards)
+  let gapsNeeded = 0;
+  for (let i = 1; i < nonWildValues.length; i++) {
+    gapsNeeded += nonWildValues[i] - nonWildValues[i - 1] - 1;
+  }
+
+  // Wildcards not used for gaps extend at the ends
+  const wildsForExtension = wildCards.length - gapsNeeded;
+
+  // Calculate the effective range of the current run (including wildcards)
+  // Wildcards extending at ends are distributed - assume they extend toward higher values first
+  // (this matches how runs are typically displayed)
+  let effectiveMin = minNonWild;
+  let effectiveMax = maxNonWild;
+
+  // For existing wildcards, assume they extend the run at the end first, then beginning
+  let remainingWilds = wildsForExtension;
+  while (remainingWilds > 0 && effectiveMax < ACE_HIGH_VALUE) {
+    effectiveMax++;
+    remainingWilds--;
+  }
+  while (remainingWilds > 0 && effectiveMin > 1) {
+    effectiveMin--;
+    remainingWilds--;
+  }
+
+  console.log(`[RUN] getValidWildcardPositions: nonWilds=[${nonWildValues.join(',')}], wilds=${wildCards.length}, gaps=${gapsNeeded}, effectiveRange=${effectiveMin}-${effectiveMax}, aceHigh=${aceHigh}`);
 
   const validPositions: ('beginning' | 'end')[] = [];
 
-  // Check if wildcard can go at the beginning (one before min)
-  const valueAtBeginning = minValue - 1;
-  if (valueAtBeginning >= 1 && valueAtBeginning <= ACE_HIGH_VALUE) {
-    if (!(valueAtBeginning === ACE_HIGH_VALUE && !aceHigh) && !(valueAtBeginning === 1 && aceHigh)) {
+  // Check if wildcard can go at the beginning (one before effectiveMin)
+  const valueAtBeginning = effectiveMin - 1;
+  if (valueAtBeginning >= 1) {
+    // Don't allow wrap-around (going below Ace low or wrapping from Ace high to 2)
+    if (!(aceHigh && valueAtBeginning === 1)) {
       validPositions.push('beginning');
     }
   }
 
-  // Check if wildcard can go at the end (one after max)
-  const valueAtEnd = maxValue + 1;
-  if (valueAtEnd >= 1 && valueAtEnd <= ACE_HIGH_VALUE) {
-    if (!(valueAtEnd === ACE_HIGH_VALUE && !aceHigh) && !(valueAtEnd === 1 && aceHigh)) {
+  // Check if wildcard can go at the end (one after effectiveMax)
+  const valueAtEnd = effectiveMax + 1;
+  if (valueAtEnd <= ACE_HIGH_VALUE) {
+    // Don't allow wrap-around (going above Ace high or wrapping from Ace low to King)
+    if (!(aceHigh && valueAtEnd > ACE_HIGH_VALUE) && !(!aceHigh && valueAtEnd > 13)) {
       validPositions.push('end');
     }
   }
 
+  console.log(`[RUN] getValidWildcardPositions result: [${validPositions.join(',')}]`);
   return validPositions;
 }
 

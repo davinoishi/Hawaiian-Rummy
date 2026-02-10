@@ -22,9 +22,43 @@ export function canCardFitMeld(card: Card, meld: Meld): boolean {
   if (meld.type === 'set') {
     return canAddToSet(card, meld);
   } else {
+    // For runs, check if adding the card creates a valid run
     const testCards = [...meld.cards, card];
     const result = validateRun(testCards);
-    console.log(`[LAYOFF] canCardFitMeld: card=${card.rank}-${card.suit} (wild=${card.isWild}), meld type=${meld.type}, cards=[${meld.cards.map(c => `${c.rank}-${c.suit}`).join(',')}], result=${result.valid}`);
+
+    // If the standard validation fails, check if this is a wildcard replacement scenario
+    // (user's natural card can replace a wildcard in the run)
+    if (!result.valid && !card.isWild) {
+      const nonWildMeldCards = getNonWildcards(meld.cards);
+      const wildMeldCards = getWildcards(meld.cards);
+
+      // Check if the card's suit matches the run's suit
+      if (nonWildMeldCards.length > 0 && nonWildMeldCards[0].suit === card.suit) {
+        // Check if the card would logically replace a wildcard
+        // (i.e., the card's rank is within the range covered by wildcards)
+        const cardValue = getRankValue(card.rank);
+        const nonWildValues = nonWildMeldCards.map(c => getRankValue(c.rank)).sort((a, b) => a - b);
+        const minVal = nonWildValues[0];
+        const maxVal = nonWildValues[nonWildValues.length - 1];
+
+        // Check if there are gaps filled by wildcards
+        let gapsNeeded = 0;
+        for (let i = 1; i < nonWildValues.length; i++) {
+          gapsNeeded += nonWildValues[i] - nonWildValues[i - 1] - 1;
+        }
+
+        // If the card would fill a gap currently filled by a wildcard
+        if (gapsNeeded > 0 && cardValue > minVal && cardValue < maxVal) {
+          // Check if this value is not already in the run
+          if (!nonWildValues.includes(cardValue)) {
+            console.log(`[LAYOFF] Wildcard replacement scenario detected: ${card.rank}${card.suit} can replace wildcard in gap`);
+            return true;
+          }
+        }
+      }
+    }
+
+    console.log(`[LAYOFF] canCardFitMeld: card=${card.rank}-${card.suit} (wild=${card.isWild}), meld type=${meld.type}, cards=[${meld.cards.map(c => `${c.rank}-${c.suit}(w:${c.isWild})`).join(',')}], result=${result.valid}`);
     return result.valid;
   }
 }
@@ -161,11 +195,15 @@ export function processLayoffCard(state: GameState, action: LayoffCardAction): A
   if (card.isWild && meld.type === 'run') {
     // Place wildcard at specified position
     const position = action.wildcardPosition || validation.validPositions?.[0] || 'end';
+    console.log(`[LAYOFF] Wildcard layoff: action.wildcardPosition=${action.wildcardPosition}, chosen position=${position}`);
+    console.log(`[LAYOFF] Meld before: [${meld.cards.map(c => `${c.rank}${c.suit}`).join(', ')}]`);
+
     if (position === 'beginning') {
       newMeldCards = [card, ...meld.cards];
     } else {
       newMeldCards = [...meld.cards, card];
     }
+    console.log(`[LAYOFF] Meld after: [${newMeldCards.map(c => `${c.rank}${c.suit}`).join(', ')}]`);
   } else if (meld.type === 'run') {
     // Non-wildcard run layoff - sort properly
     newMeldCards = sortRunCards([...meld.cards, card]);

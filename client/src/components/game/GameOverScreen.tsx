@@ -2,18 +2,25 @@
  * GameOverScreen - Shows final game results
  */
 
-import { useGameStore, useUIStore } from '../../store';
-import { usePlayerActions, useAudio } from '../../hooks';
+import { useGameStore, useUIStore, useSocketStore } from '../../store';
+import { useAudio } from '../../hooks';
+import { ChatPanel } from './ChatPanel';
 
 export function GameOverScreen() {
-  const { players, winner, isWinner } = useGameStore();
-  const { setShowConfetti } = useUIStore();
+  const { players, winner, isWinner, rematchVotes, hasVotedForRematch, roomId } = useGameStore();
+  const emit = useSocketStore((state) => state.emit);
   const { playClick } = useAudio();
 
   // Sort players by score (lowest first for rummy)
   const sortedPlayers = [...(players || [])].sort((a, b) => a.score - b.score);
 
-  const handlePlayAgain = () => {
+  const handleRematch = () => {
+    playClick();
+    useGameStore.getState().setHasVotedForRematch(true);
+    emit('requestRematch', { roomId });
+  };
+
+  const handleLeave = () => {
     playClick();
     // Reset and go back to join
     useGameStore.getState().reset();
@@ -95,14 +102,38 @@ export function GameOverScreen() {
 
         {/* Actions */}
         <div className="space-y-3">
+          {hasVotedForRematch ? (
+            <div className="text-center p-4 bg-emerald-700/30 rounded-lg">
+              <div className="flex items-center justify-center gap-2 text-emerald-200 mb-2">
+                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                Waiting for others...
+              </div>
+              {rematchVotes && (
+                <div className="text-sm text-emerald-300">
+                  {rematchVotes.votedCount}/{rematchVotes.total} voted for rematch
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={handleRematch}
+              className="btn-primary w-full py-3 text-lg"
+            >
+              Rematch
+            </button>
+          )}
+
           <button
-            onClick={handlePlayAgain}
-            className="btn-primary w-full py-3 text-lg"
+            onClick={handleLeave}
+            className="btn-ghost w-full py-2 text-emerald-200"
           >
-            Play Again
+            Leave Game
           </button>
         </div>
       </div>
+
+      {/* Chat panel */}
+      <ChatPanel />
     </div>
   );
 }

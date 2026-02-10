@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme CSS Variables */
+:root {
+  /* Dark theme (default) */
+  --bg-primary: theme('colors.emerald.900');
+  --bg-secondary: theme('colors.emerald.800');
+  --bg-tertiary: theme('colors.emerald.700');
+  --bg-panel: rgba(6, 78, 59, 0.9);
+  --text-primary: theme('colors.white');
+  --text-secondary: theme('colors.emerald.200');
+  --text-muted: theme('colors.emerald.400');
+  --border-color: rgba(16, 185, 129, 0.5);
+  --accent-primary: theme('colors.yellow.500');
+  --accent-secondary: theme('colors.emerald.500');
+  --gradient-from: theme('colors.emerald.800');
+  --gradient-to: theme('colors.emerald.950');
+}
+
+:root.light, [data-theme="light"] {
+  /* Light theme - emerald palette */
+  --bg-primary: theme('colors.emerald.50');       /* #ecfdf5 */
+  --bg-secondary: theme('colors.emerald.100');    /* #d1fae5 */
+  --bg-tertiary: theme('colors.emerald.200');     /* #a7f3d0 */
+  --bg-panel: rgba(209, 250, 229, 0.85);          /* emerald-100/85 */
+  --text-primary: theme('colors.emerald.900');    /* #064e3b */
+  --text-secondary: theme('colors.emerald.800');  /* #065f46 */
+  --text-muted: theme('colors.emerald.700');      /* #047857 */
+  --border-color: rgba(16, 185, 129, 0.35);       /* emerald-600/35 */
+  --accent-primary: theme('colors.amber.500');    /* #f59e0b */
+  --accent-secondary: theme('colors.emerald.600');
+  --gradient-from: theme('colors.emerald.100');
+  --gradient-to: theme('colors.emerald.50');
+}
+
 /* Base styles */
 @layer base {
   html {
@@ -10,7 +43,21 @@
   }
 
   body {
-    @apply bg-emerald-900 text-white overflow-x-hidden;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    @apply overflow-x-hidden;
+  }
+
+  /* Dark theme body */
+  :root:not(.light) body,
+  :root:not([data-theme="light"]) body {
+    @apply bg-emerald-900 text-white;
+  }
+
+  /* Light theme body */
+  :root.light body,
+  [data-theme="light"] body {
+    @apply bg-emerald-50 text-emerald-900;
   }
 
   /* Prevent text selection on game elements */
@@ -107,8 +154,16 @@
 
   /* Meld group */
   .meld-group {
-    @apply flex items-center p-2 rounded-lg;
-    @apply bg-emerald-700/50 border border-emerald-600/50;
+    @apply flex items-center p-2 rounded-lg border;
+  }
+
+  :root:not(.light):not([data-theme="light"]) .meld-group {
+    @apply bg-emerald-700/50 border-emerald-600/50;
+  }
+
+  :root.light .meld-group,
+  [data-theme="light"] .meld-group {
+    @apply bg-emerald-100 border-emerald-300;
   }
 
   /* Button base */
@@ -138,25 +193,52 @@
   }
 
   .btn-ghost {
-    @apply btn bg-transparent text-white;
+    @apply btn bg-transparent;
     @apply hover:bg-white/10;
     @apply active:bg-white/20;
+  }
+
+  :root:not(.light):not([data-theme="light"]) .btn-ghost {
+    @apply text-white;
+  }
+
+  :root.light .btn-ghost,
+  [data-theme="light"] .btn-ghost {
+    @apply text-emerald-800 hover:bg-emerald-200/50 active:bg-emerald-200;
   }
 
   /* Input base */
   .input {
     @apply w-full px-4 py-3 rounded-lg;
-    @apply bg-white/10 text-white placeholder-white/50;
-    @apply border border-white/20;
+    @apply border;
     @apply focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent;
     @apply transition-all duration-150;
   }
 
+  :root:not(.light):not([data-theme="light"]) .input {
+    @apply bg-white/10 text-white placeholder-white/50 border-white/20;
+  }
+
+  :root.light .input,
+  [data-theme="light"] .input {
+    @apply bg-white text-emerald-900 placeholder-emerald-400 border-emerald-300;
+  }
+
   /* Panel */
   .panel {
-    @apply bg-emerald-800/90 backdrop-blur-sm;
-    @apply rounded-xl border border-emerald-600/50;
-    @apply shadow-xl;
+    @apply backdrop-blur-sm rounded-xl shadow-xl;
+    background-color: var(--bg-panel);
+    border: 1px solid var(--border-color);
+  }
+
+  :root:not(.light):not([data-theme="light"]) .panel {
+    @apply bg-emerald-800/90 border-emerald-600/50;
+  }
+
+  :root.light .panel,
+  [data-theme="light"] .panel {
+    background-color: rgba(209, 250, 229, 0.85);
+    @apply border-emerald-300/50 shadow-lg;
   }
 
   /* Tooltip */
@@ -350,3 +432,4 @@
     padding-right: max(0.5rem, env(safe-area-inset-right));
   }
 }
+

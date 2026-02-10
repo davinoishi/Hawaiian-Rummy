@@ -17,7 +17,7 @@ interface MeldAreaProps {
 }
 
 function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: MeldAreaProps) {
-  const { layoffMode, selectedMeld, dragOverMeld, setSelectedMeld, selectedCardIds } = useUIStore();
+  const { layoffMode, selectedMeld, focusedMeld, dragOverMeld, setSelectedMeld, selectedCardIds } = useUIStore();
   const hasMetRequirements = useGameStore((state) => state.hasMetRequirements);
   const { layoffCard } = usePlayerActions();
   const { tap, meldCreate } = useHaptics();
@@ -55,15 +55,17 @@ function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: Mel
       <div className="flex flex-wrap gap-3">
         {melds.map((meld, meldIndex) => {
           const isSelected = selectedMeld?.playerId === playerId && selectedMeld?.meldIndex === meldIndex;
+          const isFocused = focusedMeld?.playerId === playerId && focusedMeld?.meldIndex === meldIndex;
           const isDragOver = dragOverMeld?.playerId === playerId && dragOverMeld?.meldIndex === meldIndex;
 
           return (
             <div
               key={`${playerId}-meld-${meldIndex}`}
               className={`
-                meld-group
+                meld-group relative
                 ${layoffMode && canLayoff ? 'cursor-pointer hover:bg-emerald-600/50' : ''}
                 ${isSelected ? 'ring-2 ring-yellow-400 bg-emerald-600/70' : ''}
+                ${isFocused && !isSelected ? 'ring-2 ring-cyan-400 animate-pulse' : ''}
                 ${isDragOver ? 'ring-2 ring-green-400 bg-green-600/30' : ''}
               `}
               onClick={() => handleMeldClick(meldIndex)}

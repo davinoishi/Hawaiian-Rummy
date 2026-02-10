@@ -3,32 +3,14 @@
  * Generates sounds programmatically - no external files needed
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
+import { useSettingsStore } from '../store/settings-store';
 
 type SoundName =
   | 'cardDraw' | 'cardPlace' | 'cardFlip' | 'meldCreate' | 'discard'
   | 'buyRequest' | 'buyGranted' | 'buyDenied'
   | 'turnStart' | 'roundEnd' | 'gameWin' | 'gameLose'
   | 'error' | 'click' | 'countdown';
-
-// Get saved preference from localStorage
-const getSavedMuteState = (): boolean => {
-  try {
-    const saved = localStorage.getItem('hawaiianRummy_muted');
-    return saved === 'true';
-  } catch {
-    return false;
-  }
-};
-
-// Save preference to localStorage
-const saveMuteState = (muted: boolean): void => {
-  try {
-    localStorage.setItem('hawaiianRummy_muted', String(muted));
-  } catch {
-    // Ignore localStorage errors
-  }
-};
 
 // Sound generation functions
 type SoundGenerator = (ctx: AudioContext, volume: number) => void;
@@ -275,8 +257,13 @@ const soundGenerators: Record<SoundName, SoundGenerator> = {
 };
 
 export function useAudio() {
-  const [muted, setMutedState] = useState(getSavedMuteState);
-  const [volume, setVolumeState] = useState(0.5);
+  const soundEnabled = useSettingsStore((state) => state.soundEnabled);
+  const volume = useSettingsStore((state) => state.soundVolume);
+  const setSoundEnabled = useSettingsStore((state) => state.setSoundEnabled);
+  const setSoundVolume = useSettingsStore((state) => state.setSoundVolume);
+  const toggleSound = useSettingsStore((state) => state.toggleSound);
+
+  const muted = !soundEnabled;
   const audioContextRef = useRef<AudioContext | null>(null);
 
   // Get or create audio context
@@ -313,22 +300,20 @@ export function useAudio() {
     }
   }, [muted, volume, getAudioContext]);
 
-  // Set muted state
+  // Set muted state (inverted from soundEnabled)
   const setMuted = useCallback((value: boolean) => {
-    setMutedState(value);
-    saveMuteState(value);
-  }, []);
+    setSoundEnabled(!value);
+  }, [setSoundEnabled]);
 
   // Toggle muted state
   const toggleMute = useCallback(() => {
-    setMuted(!muted);
-  }, [muted, setMuted]);
+    toggleSound();
+  }, [toggleSound]);
 
   // Set volume
   const setVolume = useCallback((value: number) => {
-    const clampedValue = Math.max(0, Math.min(1, value));
-    setVolumeState(clampedValue);
-  }, []);
+    setSoundVolume(value);
+  }, [setSoundVolume]);
 
   // Convenience methods for common sounds
   const playCardDraw = useCallback(() => playSound('cardDraw'), [playSound]);

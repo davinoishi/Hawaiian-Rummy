@@ -1,5 +1,6 @@
 /**
  * usePlayerActions - Hook for player game actions
+ * Supports both online (socket) and offline (local) game modes
  */
 
 import { useCallback, useState, useEffect } from 'react';
@@ -7,9 +8,15 @@ import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
 import { useUIStore } from '../store/ui-store';
 import { useTutorialStore } from '../store/tutorial-store';
+import {
+  isLocalGameRunning,
+  processLocalAction,
+  getLocalPlayerId
+} from '../services/local-game';
 
 export function usePlayerActions() {
   const emit = useSocketStore((state) => state.emit);
+
   const {
     isMyTurn,
     canDraw,
@@ -60,7 +67,14 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('drawCard');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'DRAW_CARD', playerId });
+      }
+    } else {
+      emit('drawCard');
+    }
 
     // Auto-advance tutorial if needed
     if (tutorialActive && currentStepData?.nextTrigger === 'cardDrawn') {
@@ -80,7 +94,14 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('takeDiscard');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'TAKE_DISCARD', playerId });
+      }
+    } else {
+      emit('takeDiscard');
+    }
   }, [localCanTakeDiscard, emit, tutorialActive, isActionAllowed, setErrorMessage]);
 
   // Create a meld from selected cards
@@ -94,11 +115,40 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('createMeld', {
-      cardIds: selectedCardIds,
-      type,
-      wildcardPositions
-    });
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        let result = processLocalAction({
+          type: 'CREATE_MELD',
+          playerId,
+          meldType: type,
+          cardIds: selectedCardIds
+        });
+
+        // Handle wildcard position choice - auto-select first arrangement
+        if (!result.success && result.sideEffects?.some(e => e.type === 'NEEDS_WILDCARD_POSITION')) {
+          result = processLocalAction({
+            type: 'CREATE_MELD',
+            playerId,
+            meldType: type,
+            cardIds: selectedCardIds,
+            wildcardPlacement: 0
+          });
+        }
+
+        // Show error if still failed
+        if (!result.success && result.error) {
+          setErrorMessage(result.error);
+          return;
+        }
+      }
+    } else {
+      emit('createMeld', {
+        cardIds: selectedCardIds,
+        type,
+        wildcardPositions
+      });
+    }
 
     clearSelection();
 
@@ -110,7 +160,14 @@ export function usePlayerActions() {
 
   // Cancel all pending melds
   const cancelMelds = useCallback(() => {
-    emit('cancelMelds');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'CANCEL_MELDS', playerId });
+      }
+    } else {
+      emit('cancelMelds');
+    }
     clearSelection();
   }, [emit, clearSelection]);
 
@@ -132,7 +189,14 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('discard', { cardId: discardCardId });
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'DISCARD', playerId, cardId: discardCardId });
+      }
+    } else {
+      emit('discard', { cardId: discardCardId });
+    }
     clearSelection();
 
     // Auto-advance tutorial if needed
@@ -158,13 +222,27 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('layoffCard', {
-      cardId,
-      meldOwnerId,
-      meldIndex,
-      position,
-      wildcardPosition
-    });
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({
+          type: 'LAYOFF_CARD',
+          playerId,
+          cardId,
+          meldOwnerId,
+          meldIndex,
+          wildcardPosition: wildcardPosition as 'beginning' | 'end' | undefined
+        });
+      }
+    } else {
+      emit('layoffCard', {
+        cardId,
+        meldOwnerId,
+        meldIndex,
+        position,
+        wildcardPosition
+      });
+    }
 
     clearSelection();
   }, [hasMetRequirements, emit, clearSelection, tutorialActive, isActionAllowed, setErrorMessage]);
@@ -175,27 +253,62 @@ export function usePlayerActions() {
       return;
     }
 
-    emit('requestBuy');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'REQUEST_BUY', playerId });
+      }
+    } else {
+      emit('requestBuy');
+    }
   }, [emit, tutorialActive, isActionAllowed]);
 
   // Cancel a buy request
   const cancelBuy = useCallback(() => {
-    emit('cancelBuy');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'CANCEL_BUY', playerId });
+      }
+    } else {
+      emit('cancelBuy');
+    }
   }, [emit]);
 
   // Pass on buying
   const passBuy = useCallback(() => {
-    emit('passBuy');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'PASS_BUY', playerId });
+      }
+    } else {
+      emit('passBuy');
+    }
   }, [emit]);
 
   // Reorder cards in hand
   const reorderHand = useCallback((cardIds: string[]) => {
-    emit('reorderHand', { cardIds });
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'REORDER_HAND', playerId, cardIds });
+      }
+    } else {
+      emit('reorderHand', { cardIds });
+    }
   }, [emit]);
 
   // Continue to next round
   const continueGame = useCallback(() => {
-    emit('continue');
+    if (isLocalGameRunning()) {
+      const playerId = getLocalPlayerId();
+      if (playerId) {
+        processLocalAction({ type: 'CONTINUE_TO_NEXT_ROUND', playerId });
+      }
+    } else {
+      emit('continue');
+    }
   }, [emit]);
 
   return {

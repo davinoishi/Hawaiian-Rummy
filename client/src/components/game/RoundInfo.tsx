@@ -2,8 +2,13 @@
  * RoundInfo - Displays current round and requirements
  */
 
-import { memo } from 'react';
-import { useUIStore } from '../../store';
+import { memo, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { useUIStore, useSettingsStore, useGameStore } from '../../store';
+import { useProfileStore } from '../../store/profile-store';
+import { useSocketStore } from '../../store/socket-store';
+import { SettingsPanel } from '../ui/SettingsPanel';
+import { useNavigate } from 'react-router-dom';
 import type { RoundRequirement } from '@shared/game-engine/types';
 
 interface RoundInfoProps {
@@ -15,13 +20,73 @@ interface RoundInfoProps {
 
 function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }: RoundInfoProps) {
   const setShowHowToPlay = useUIStore((state) => state.setShowHowToPlay);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
+
+  const { players, roomId, tutorialMode } = useGameStore();
+  const { profileId } = useProfileStore();
+  const { emit, clearGameSession } = useSocketStore();
+  const reset = useGameStore((state) => state.reset);
+  const navigate = useNavigate();
+
+  // Check if this is a single-player game (only 1 non-AI player)
+  const humanPlayers = players?.filter(p => !p.isAI) || [];
+  const isSinglePlayer = humanPlayers.length === 1;
+  const canSave = isSinglePlayer && profileId && !tutorialMode;
+
+  const handleSaveAndExit = useCallback(() => {
+    console.log('[SAVE] handleSaveAndExit called', { roomId, profileId, isSaving });
+    if (!roomId || !profileId) {
+      console.log('[SAVE] Missing roomId or profileId');
+      setSaveError('Missing room or profile information');
+      return;
+    }
+    if (isSaving) {
+      console.log('[SAVE] Already saving, ignoring');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    console.log('[SAVE] Emitting saveGame event');
+    emit('saveGame', { roomId, profileId }, (response: { success?: boolean; error?: string }) => {
+      console.log('[SAVE] Got response:', response);
+      setIsSaving(false);
+      if (response?.success) {
+        console.log('[SAVE] Save successful, navigating to profile');
+        // Clear the game session and return to profile page
+        clearGameSession();
+        reset();
+        setSaveModalOpen(false);
+        navigate(`/p/${profileId}`);
+      } else {
+        console.log('[SAVE] Save failed:', response?.error);
+        setSaveError(response?.error || 'Failed to save game');
+      }
+    });
+  }, [roomId, profileId, isSaving, emit, clearGameSession, reset, navigate]);
+
+  const handleExitWithoutSaving = useCallback(() => {
+    clearGameSession();
+    reset();
+    if (profileId) {
+      navigate(`/p/${profileId}`);
+    } else {
+      navigate('/');
+    }
+  }, [clearGameSession, reset, profileId, navigate]);
 
   return (
     <div className="panel p-3 mb-4">
       <div className="flex items-center justify-between gap-4">
         {/* Round number */}
         <div className="flex items-center gap-3">
-          <span className="text-lg font-bold text-white">
+          <span className={`text-lg font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
             Round {round}
           </span>
           {isMyTurn && (
@@ -35,8 +100,8 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
         <div className={`
           flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm
           ${hasMetRequirements
-            ? 'bg-green-500/20 text-green-300 border border-green-500/50'
-            : 'bg-emerald-700/50 text-emerald-200'}
+            ? (isLight ? 'bg-green-100 text-green-700 border border-green-300' : 'bg-green-500/20 text-green-300 border border-green-500/50')
+            : (isLight ? 'bg-emerald-200 text-emerald-800' : 'bg-emerald-700/50 text-emerald-200')}
         `}>
           {hasMetRequirements && (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -48,17 +113,100 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
           </span>
         </div>
 
-        {/* Help button */}
-        <button
-          onClick={() => setShowHowToPlay(true)}
-          className="btn-ghost p-2"
-          title="How to Play"
-        >
-          <svg className="w-5 h-5 text-emerald-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
+        {/* Help, Save, and Settings buttons */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowHowToPlay(true)}
+            className="btn-ghost p-2"
+            title="How to Play (?)"
+          >
+            <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
+          {canSave && (
+            <button
+              onClick={() => setSaveModalOpen(true)}
+              className="btn-ghost p-2"
+              title="Save & Exit"
+            >
+              <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="btn-ghost p-2"
+            title="Settings (,)"
+          >
+            <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
       </div>
+
+      {/* Settings panel */}
+      <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* Save & Exit Modal - rendered via portal to escape stacking context */}
+      {saveModalOpen && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+          style={{ zIndex: 9999 }}
+          onClick={(e) => {
+            // Close on backdrop click
+            if (e.target === e.currentTarget && !isSaving) {
+              setSaveModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className={`${isLight ? 'bg-white' : 'bg-gray-800'} rounded-lg p-6 max-w-md w-full shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className={`text-xl font-bold mb-4 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+              Save & Exit
+            </h2>
+            <p className={`mb-6 ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>
+              Would you like to save your game? You can resume from your profile page later.
+            </p>
+
+            {saveError && (
+              <div className={`mb-4 p-3 rounded-lg text-sm ${isLight ? 'bg-red-100 text-red-700' : 'bg-red-500/20 text-red-300'}`}>
+                {saveError}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleSaveAndExit}
+                disabled={isSaving}
+                className="btn-primary w-full"
+              >
+                {isSaving ? 'Saving...' : 'Save & Exit'}
+              </button>
+              <button
+                onClick={handleExitWithoutSaving}
+                disabled={isSaving}
+                className={`btn-ghost w-full ${isLight ? 'text-red-600' : 'text-red-400'}`}
+              >
+                Exit Without Saving
+              </button>
+              <button
+                onClick={() => setSaveModalOpen(false)}
+                disabled={isSaving}
+                className="btn-ghost w-full"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

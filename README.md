@@ -13,7 +13,8 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 ### Game Mechanics
 - **Multi-Room Support**: Create or join independent game rooms for simultaneous games
 - 4 players per room (at least one human is required, and AI opponents will fill any open spots)
-- **AI Players**: Intelligent AI opponents (Alex, Jordan, Taylor) automatically fill empty seats
+- **AI Players**: Intelligent AI opponents automatically fill empty seats
+- **Offline Mode (PWA)**: Play against AI without internet connection - installable as a Progressive Web App
 - 10 rounds with increasing difficulty
 - Complete buy mechanism with priority system
 - Sets, runs, wildcards (2s and Jokers), and layoff functionality
@@ -22,6 +23,13 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 - Turn-based gameplay
 - Individual hand visibility
 - Player scores and meld tracking
+
+### Social Features
+- **Private Rooms**: Create password-protected rooms for friends-only games
+- **Invite Links**: Share a single URL that includes room code and password
+- **In-Game Chat**: Real-time messaging between players during the game
+- **Rematch**: Quick restart with the same players after a game ends
+- **Player Disconnect Handling**: 45-second grace period with AI takeover for disconnected players
 
 ### User Interface
 - Clockwise player arrangement following turn order
@@ -34,6 +42,9 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 - Sound effects with volume controls (card actions, notifications, victory fanfare)
 - Mobile-optimized responsive design with touch support
 - Card zoom on long-press for better visibility
+- **Light/Dark Theme**: Choose your preferred color scheme or use system default
+- **Settings Panel**: Customize sound, haptics, and theme preferences
+- **Offline Status Indicator**: Shows connection status with visual indicator
 
 ## Tech Stack
 
@@ -126,13 +137,19 @@ hawaiian-rummy/
 │   ├── src/
 │   │   ├── components/        # React components
 │   │   │   ├── actions/       # ActionBar, BuyActions
-│   │   │   ├── game/          # GameBoard, PlayerHand, Card, etc.
+│   │   │   ├── game/          # GameBoard, PlayerHand, Card, ChatPanel, etc.
 │   │   │   ├── lobby/         # JoinScreen, LobbyScreen
 │   │   │   ├── modals/        # HowToPlayModal, WildcardPositionModal
-│   │   │   └── ui/            # Notifications, Tutorial, Confetti
-│   │   ├── hooks/             # Custom React hooks
-│   │   ├── store/             # Zustand state stores
+│   │   │   ├── profile/       # PlayerProfile, Leaderboard
+│   │   │   └── ui/            # Notifications, Tutorial, SettingsPanel, OnlineStatusIndicator
+│   │   ├── hooks/             # Custom React hooks (useLocalGame, useOnlineStatus, etc.)
+│   │   ├── services/          # Local game runner for offline play
+│   │   ├── store/             # Zustand state stores (game, UI, settings, profile)
 │   │   └── styles/            # Tailwind CSS
+│   ├── public/
+│   │   ├── sw.js              # Service worker for PWA/offline support
+│   │   ├── manifest.json      # PWA manifest
+│   │   └── icons/             # App icons for PWA
 │   ├── package.json
 │   └── vite.config.ts
 ├── server/                    # Express backend (TypeScript)
@@ -141,18 +158,25 @@ hawaiian-rummy/
 │   │   ├── ai-strategy.ts
 │   │   └── strategies/
 │   ├── socket-handlers/       # Socket.IO event handlers
+│   ├── routes/                # REST API routes (profiles)
 │   ├── game-manager.ts
+│   ├── profile-manager.ts     # Player profile management
 │   └── index.ts
 ├── shared/                    # Shared game engine (TypeScript)
-│   └── game-engine/
-│       ├── actions/           # Game actions (draw, meld, discard, etc.)
-│       ├── validation/        # Meld validation (sets, runs, requirements)
-│       ├── types.ts           # TypeScript type definitions
-│       ├── deck.ts            # Deck management
-│       └── game-state.ts      # Game state management
+│   ├── game-engine/
+│   │   ├── actions/           # Game actions (draw, meld, discard, etc.)
+│   │   ├── validation/        # Meld validation (sets, runs, requirements)
+│   │   ├── types.ts           # TypeScript type definitions
+│   │   ├── deck.ts            # Deck management
+│   │   └── game-state.ts      # Game state management
+│   ├── ai/                    # Isomorphic AI for offline play
+│   └── profile-types.ts       # Player profile types
 ├── public/                    # Static assets & built client
 │   ├── assets/                # Vite-built JS/CSS bundles
+│   ├── sw.js                  # Service worker
 │   └── index.html             # Entry point
+├── data/                      # Persistent data storage
+│   └── profiles/              # Player profile JSON files
 ├── package.json               # Root dependencies
 ├── tsconfig.json              # TypeScript config (client)
 └── tsconfig.server.json       # TypeScript config (server)
@@ -177,6 +201,20 @@ To test with multiple players:
 
 ## Recent Updates
 
+- **v2.3.0**: Offline/PWA mode - play against AI without internet connection
+  - Progressive Web App with service worker for asset caching
+  - Isomorphic game engine runs client-side for offline play
+  - Offline mode indicator and seamless online/offline switching
+  - Fixed wildcard run creation bug in offline mode
+  - Fixed buy window timer display
+- **v2.2.0**: Social features and UI improvements
+  - Private rooms with password protection
+  - Shareable invite links with embedded room code and password
+  - In-game chat for real-time player communication
+  - Rematch button for quick restarts with same players
+  - Light/dark theme support with system preference detection
+  - Settings panel for sounds, haptics, and theme
+  - Player profiles with statistics tracking
 - **v2.1.0**: Player disconnect handling with 45-second grace period and AI takeover
 - **v2.0.0**: Migrated to TypeScript with separate client/server/shared architecture
 - Fixed click punch-through bug in wildcard position modal
@@ -186,8 +224,7 @@ To test with multiple players:
 
 ## Future Enhancements
 
-- Game history and statistics tracking
-- Saved games and resume functionality
+- Saved games and resume functionality for offline mode
 - Tournament mode
 - Custom game rules configuration
 - Enhanced AI difficulty levels

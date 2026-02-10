@@ -9,7 +9,8 @@ import type {
   Card,
   Meld,
   BuyRequest,
-  GamePhase
+  GamePhase,
+  ChatMessage
 } from '@shared/game-engine/types';
 
 // Disconnected player info for UI
@@ -17,6 +18,13 @@ interface DisconnectedPlayerInfo {
   playerId: string;
   playerName: string;
   gracePeriodEnds: number;
+}
+
+// Rematch vote state
+interface RematchVoteState {
+  votes: string[];
+  votedCount: number;
+  total: number;
 }
 
 interface GameState extends Partial<ClientGameState> {
@@ -43,6 +51,18 @@ interface GameState extends Partial<ClientGameState> {
   // Disconnected players tracking
   disconnectedPlayers: DisconnectedPlayerInfo[];
 
+  // Chat state
+  chatMessages: ChatMessage[];
+  unreadChatCount: number;
+  chatOpen: boolean;
+
+  // Rematch state
+  rematchVotes: RematchVoteState | null;
+  hasVotedForRematch: boolean;
+
+  // Room password (for invite links)
+  roomPassword: string | null;
+
   // Actions
   setRoomId: (roomId: string | null) => void;
   setPlayerName: (name: string) => void;
@@ -54,6 +74,12 @@ interface GameState extends Partial<ClientGameState> {
   addDisconnectedPlayer: (info: DisconnectedPlayerInfo) => void;
   removeDisconnectedPlayer: (playerId: string) => void;
   clearDisconnectedPlayers: () => void;
+  addChatMessage: (msg: ChatMessage) => void;
+  clearChatMessages: () => void;
+  setChatOpen: (open: boolean) => void;
+  setRematchVotes: (votes: RematchVoteState | null) => void;
+  setHasVotedForRematch: (voted: boolean) => void;
+  setRoomPassword: (password: string | null) => void;
   reset: () => void;
 }
 
@@ -65,6 +91,12 @@ const initialState = {
   turnOrderData: null,
   turnOrderCountdown: null,
   disconnectedPlayers: [],
+  chatMessages: [] as ChatMessage[],
+  unreadChatCount: 0,
+  chatOpen: false,
+  rematchVotes: null as RematchVoteState | null,
+  hasVotedForRematch: false,
+  roomPassword: null as string | null,
 
   // Game state
   players: [],
@@ -113,14 +145,15 @@ export const useGameStore = create<GameState>((set) => ({
     appPhase: data.gameStarted ? 'playing' : 'lobby'
   }),
 
-  updateGameState: (state) => set({
+  updateGameState: (state) => set((prev) => ({
+    ...prev,
     ...state,
     appPhase: state.gamePhase === 'gameOver'
       ? 'gameOver'
       : state.gamePhase === 'roundSummary'
         ? 'roundSummary'
         : 'playing'
-  }),
+  })),
 
   updateTurnOrder: (data) => set({
     turnOrderData: data,
@@ -141,6 +174,24 @@ export const useGameStore = create<GameState>((set) => ({
   })),
 
   clearDisconnectedPlayers: () => set({ disconnectedPlayers: [] }),
+
+  addChatMessage: (msg) => set((state) => ({
+    chatMessages: [...state.chatMessages, msg].slice(-100), // Keep last 100 messages
+    unreadChatCount: state.chatOpen ? 0 : state.unreadChatCount + 1
+  })),
+
+  clearChatMessages: () => set({ chatMessages: [], unreadChatCount: 0 }),
+
+  setChatOpen: (open) => set((state) => ({
+    chatOpen: open,
+    unreadChatCount: open ? 0 : state.unreadChatCount
+  })),
+
+  setRematchVotes: (votes) => set({ rematchVotes: votes }),
+
+  setHasVotedForRematch: (voted) => set({ hasVotedForRematch: voted }),
+
+  setRoomPassword: (password) => set({ roomPassword: password }),
 
   reset: () => set(initialState)
 }));

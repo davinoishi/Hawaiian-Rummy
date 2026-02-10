@@ -11,9 +11,11 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { gameManager } from './game-manager.js';
+import { profileManager } from './profile-manager.js';
 import { setupSocketHandlers } from './socket-handlers/index.js';
 import { AIManager } from './ai/ai-manager.js';
 import { AI_NAMES } from '../shared/game-engine/constants.js';
+import profileRoutes from './routes/profile-routes.js';
 
 // ES Module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +71,10 @@ function getAnalyticsSummary() {
 // ===== SERVER SETUP =====
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+// Profile API routes
+app.use('/api', profileRoutes);
 
 // Analytics middleware
 app.use((req, res, next) => {
@@ -90,6 +96,12 @@ app.get('/api/analytics', (req, res) => {
 
 // Serve static files
 app.use(express.static('public'));
+
+// Catch-all route for client-side routing (SPA)
+// This must come after API routes and static files
+app.get('/{*path}', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {

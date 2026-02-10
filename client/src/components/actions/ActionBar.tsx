@@ -3,7 +3,7 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { useGameStore, useUIStore } from '../../store';
+import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useAudio, useHaptics } from '../../hooks';
 
 export function ActionBar() {
@@ -25,6 +25,8 @@ export function ActionBar() {
   const { createMeld, cancelMelds, discard, layoffCard } = usePlayerActions();
   const { playClick, playMeldCreate, playDiscard } = useAudio();
   const { tap, meldCreate } = useHaptics();
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
 
   const selectedCount = selectedCardIds.length;
   const canCreateSet = selectedCount >= 3;
@@ -93,8 +95,8 @@ export function ActionBar() {
 
   if (!isMyTurn) {
     return (
-      <div className="mt-4 min-h-[120px] p-3 rounded-lg bg-emerald-700/30 flex items-center justify-center">
-        <span className="text-emerald-200">Waiting for your turn...</span>
+      <div className={`mt-4 min-h-[120px] p-3 rounded-lg ${isLight ? 'bg-emerald-200/50' : 'bg-emerald-700/30'} flex items-center justify-center`}>
+        <span className={isLight ? 'text-emerald-700' : 'text-emerald-200'}>Waiting for your turn...</span>
       </div>
     );
   }
@@ -131,8 +133,8 @@ export function ActionBar() {
 
       {/* Layoff mode instructions */}
       {layoffMode && (
-        <div className="p-3 rounded-lg bg-yellow-500/20 border border-yellow-500/50 text-center">
-          <p className="text-yellow-200 text-sm mb-2">
+        <div className={`p-3 rounded-lg ${isLight ? 'bg-amber-100 border-amber-400' : 'bg-yellow-500/20 border-yellow-500/50'} border text-center`}>
+          <p className={`${isLight ? 'text-amber-800' : 'text-yellow-200'} text-sm mb-2`}>
             Select a card and click on a meld to lay off
           </p>
           {selectedMeld && selectedCardIds.length === 1 && (
@@ -147,7 +149,7 @@ export function ActionBar() {
       )}
 
       {/* Utility actions */}
-      <div className="flex flex-wrap gap-2 justify-center pt-2 border-t border-emerald-700/50">
+      <div className={`flex flex-wrap gap-2 justify-center pt-2 border-t ${isLight ? 'border-emerald-300' : 'border-emerald-700/50'}`}>
         {selectedCount > 0 && (
           <button
             onClick={handleClearSelection}
@@ -159,7 +161,7 @@ export function ActionBar() {
 
         <button
           onClick={handleCancelMelds}
-          className="btn-ghost text-sm text-orange-300"
+          className={`btn-ghost text-sm ${isLight ? 'text-orange-600' : 'text-orange-300'}`}
         >
           Cancel Melds
         </button>

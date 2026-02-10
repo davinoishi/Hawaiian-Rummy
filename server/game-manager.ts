@@ -9,8 +9,10 @@ import {
   ActionResult,
   ClientGameState,
   ClientPlayer,
-  Card
+  Card,
+  PlayerState
 } from '../shared/game-engine/types';
+import type { SavedGameState, SavedPlayerState, SavedCard, SavedMeld } from '../shared/profile-types.js';
 import {
   createInitialGameState,
   addPlayer,
@@ -50,6 +52,8 @@ export interface Room {
   aiPlayerIds: string[];
   disconnectedPlayers: Map<string, DisconnectedPlayer>;
   createdAt: number;
+  password?: string;
+  playerProfileIds: Map<string, string>;  // Map socket ID to profile ID
 }
 
 /**
@@ -69,17 +73,38 @@ export class GameManager {
   /**
    * Create a new room
    */
-  createRoom(roomId?: string): Room {
+  createRoom(roomId?: string, password?: string): Room {
     const id = roomId || this.generateRoomId();
     const room: Room = {
       id,
       state: createInitialGameState(),
       aiPlayerIds: [],
       disconnectedPlayers: new Map(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      password: password || undefined,
+      playerProfileIds: new Map()
     };
     this.rooms.set(id, room);
     return room;
+  }
+
+  /**
+   * Validate room password
+   * Returns true if password matches or room has no password
+   */
+  validateRoomPassword(roomId: string, password?: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+    if (!room.password) return true; // No password required
+    return room.password === password;
+  }
+
+  /**
+   * Check if room requires password
+   */
+  roomRequiresPassword(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    return room?.password !== undefined && room.password !== '';
   }
 
   /**
@@ -110,7 +135,7 @@ export class GameManager {
   /**
    * Add a player to a room
    */
-  addPlayerToRoom(roomId: string, playerId: string, playerName: string): boolean {
+  addPlayerToRoom(roomId: string, playerId: string, playerName: string, profileId?: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
 
@@ -118,7 +143,20 @@ export class GameManager {
     if (room.state.players.length >= 4) return false;
 
     room.state = addPlayer(room.state, playerId, playerName);
+
+    // Store profile ID if provided
+    if (profileId) {
+      room.playerProfileIds.set(playerId, profileId);
+    }
     return true;
+  }
+
+  /**
+   * Get a player's profile ID
+   */
+  getPlayerProfileId(roomId: string, playerId: string): string | undefined {
+    const room = this.rooms.get(roomId);
+    return room?.playerProfileIds.get(playerId);
   }
 
   /**
@@ -644,6 +682,188 @@ export class GameManager {
 
     console.log(`[Room ${roomId}] Converted ${disconnectedPlayer.playerName} to AI control (${newId})`);
     return newId;
+  }
+
+  /**
+   * Reset game state for rematch
+   * Keeps players, names, and AI IDs but resets all game state
+   */
+  resetGameForRematch(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const state = room.state;
+
+    // Reset player states (clear hands, melds, scores, etc.)
+    const resetPlayerStates: Record<string, PlayerState> = {};
+    for (const playerId of state.players) {
+      resetPlayerStates[playerId] = {
+        hand: [],
+        melds: [],
+        score: 0,
+        roundScores: [],
+        roundsWon: 0,
+        buyCount: 0,
+        hasMetRequirements: false
+      };
+    }
+
+    room.state = {
+      ...createInitialGameState(),
+      players: state.players,
+      playerNames: state.playerNames,
+      playerStates: resetPlayerStates,
+      tutorialMode: state.tutorialMode,
+      hostPlayerId: state.hostPlayerId // Preserve the original host
+    };
+
+    console.log(`[Room ${roomId}] Game reset for rematch`);
+    return true;
+  }
+
+  /**
+   * Get a serializable game state for saving
+   * Only includes the essential state needed to resume the game
+   */
+  getSaveableGameState(roomId: string): SavedGameState | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    const state = room.state;
+
+    // Convert player states
+    const savedPlayerStates: Record<string, SavedPlayerState> = {};
+    for (const playerId of state.players) {
+      const ps = state.playerStates[playerId];
+      savedPlayerStates[playerId] = {
+        hand: ps.hand.map(this.cardToSavedCard),
+        melds: ps.melds.map(m => ({
+          type: m.type,
+          cards: m.cards.map(this.cardToSavedCard)
+        })),
+        score: ps.score,
+        roundScores: [...ps.roundScores],
+        roundsWon: ps.roundsWon,
+        buyCount: ps.buyCount,
+        hasMetRequirements: ps.hasMetRequirements
+      };
+    }
+
+    return {
+      players: [...state.players],
+      playerNames: { ...state.playerNames },
+      playerStates: savedPlayerStates,
+      currentRound: state.currentRound,
+      currentPlayerIndex: state.currentPlayerIndex,
+      gamePhase: state.gamePhase,
+      deck: state.deck.map(this.cardToSavedCard),
+      discardPile: state.discardPile.map(this.cardToSavedCard)
+    };
+  }
+
+  /**
+   * Convert a Card to SavedCard (strips any non-essential data)
+   */
+  private cardToSavedCard(card: Card): SavedCard {
+    return {
+      id: card.id,
+      suit: card.suit,
+      rank: card.rank,
+      isWild: card.isWild
+    };
+  }
+
+  /**
+   * Restore a game from saved state
+   */
+  restoreGameFromSave(roomId: string, humanPlayerId: string, savedState: SavedGameState, aiManager?: any): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    // Find the human player ID in the saved state (should be the only non-AI player)
+    // We need to map saved player IDs to the new human player ID
+    const savedHumanPlayerId = savedState.players.find(id => !id.startsWith('ai-'));
+    if (!savedHumanPlayerId) return false;
+
+    // Create new AI IDs for the AI players
+    const aiIdMap: Record<string, string> = {};
+    const newAiPlayerIds: string[] = [];
+
+    for (const savedPlayerId of savedState.players) {
+      if (savedPlayerId === savedHumanPlayerId) {
+        // Map to new human player ID
+        aiIdMap[savedPlayerId] = humanPlayerId;
+      } else {
+        // Create new AI ID
+        const newAiId = `ai-restored-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        aiIdMap[savedPlayerId] = newAiId;
+        newAiPlayerIds.push(newAiId);
+      }
+    }
+
+    // Rebuild the state with new player IDs
+    const newPlayers = savedState.players.map(id => aiIdMap[id]);
+    const newPlayerNames: Record<string, string> = {};
+    const newPlayerStates: Record<string, PlayerState> = {};
+
+    for (const savedId of savedState.players) {
+      const newId = aiIdMap[savedId];
+      newPlayerNames[newId] = savedState.playerNames[savedId];
+
+      const savedPs = savedState.playerStates[savedId];
+      newPlayerStates[newId] = {
+        hand: savedPs.hand.map(c => ({ ...c } as Card)),
+        melds: savedPs.melds.map(m => ({
+          type: m.type,
+          cards: m.cards.map(c => ({ ...c } as Card))
+        })),
+        score: savedPs.score,
+        roundScores: [...savedPs.roundScores],
+        roundsWon: savedPs.roundsWon,
+        buyCount: savedPs.buyCount,
+        hasMetRequirements: savedPs.hasMetRequirements
+      };
+    }
+
+    // Update the room state
+    room.state = {
+      players: newPlayers,
+      playerNames: newPlayerNames,
+      playerStates: newPlayerStates,
+      disconnectedPlayerIds: [],
+      gameStarted: true,
+      gamePhase: savedState.gamePhase as GameState['gamePhase'],
+      currentPlayerIndex: savedState.currentPlayerIndex,
+      currentRound: savedState.currentRound,
+      deck: savedState.deck.map(c => ({ ...c } as Card)),
+      discardPile: savedState.discardPile.map(c => ({ ...c } as Card)),
+      buyRequests: [],
+      passedBuy: [],
+      buyJustProcessed: false,
+      lastDiscarder: null,
+      lastDiscardTimestamp: null,
+      continueClicked: [],
+      tutorialMode: false,
+      hostPlayerId: humanPlayerId
+    };
+
+    // Update room AI tracking
+    room.aiPlayerIds = newAiPlayerIds;
+    room.playerProfileIds.clear();
+
+    // Register AIs with the AI manager if provided
+    if (aiManager) {
+      for (const savedId of savedState.players) {
+        if (savedId !== savedHumanPlayerId) {
+          const newAiId = aiIdMap[savedId];
+          const aiName = savedState.playerNames[savedId];
+          aiManager.registerAI(roomId, newAiId, aiName);
+        }
+      }
+    }
+
+    console.log(`[Room ${roomId}] Game restored from save, round ${savedState.currentRound + 1}`);
+    return true;
   }
 }
 

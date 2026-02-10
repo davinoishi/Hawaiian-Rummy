@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useGameStore, useUIStore } from '../../store';
+import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useAudio, useHaptics } from '../../hooks';
 
 const BUY_WINDOW_DURATION_SEC = 5; // 5 seconds total
@@ -12,17 +12,17 @@ export function BuyActions() {
   const {
     canBuy,
     hasBuyRequest,
-    hasPassed,
     myBuyCount,
     maxBuys,
     buyWindowRemaining,
-    buyWindowActive,
-    shouldShowPass
+    buyWindowActive
   } = useGameStore();
 
-  const { requestBuy, cancelBuy, passBuy } = usePlayerActions();
+  const { requestBuy, cancelBuy } = usePlayerActions();
   const { playBuyRequest, playClick } = useAudio();
   const { buyRequest, tap } = useHaptics();
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
 
   const buysRemaining = (maxBuys || 3) - (myBuyCount || 0);
 
@@ -68,45 +68,35 @@ export function BuyActions() {
     cancelBuy();
   };
 
-  const handlePassBuy = () => {
-    playClick();
-    tap();
-    passBuy();
-  };
-
   return (
     <div className="panel p-4 animate-slide-up">
       <div className="flex flex-col items-center gap-3">
         {/* Timer */}
         <div className="flex items-center gap-2">
-          <div className="w-full h-2 bg-emerald-800 rounded-full overflow-hidden" style={{ width: '120px' }}>
+          <div className={`w-full h-2 ${isLight ? 'bg-emerald-200' : 'bg-emerald-800'} rounded-full overflow-hidden`} style={{ width: '120px' }}>
             <div
-              className="h-full bg-yellow-500 transition-all duration-100"
+              className={`h-full ${isLight ? 'bg-amber-500' : 'bg-yellow-500'} transition-all duration-100`}
               style={{ width: `${(localRemaining / BUY_WINDOW_DURATION_SEC) * 100}%` }}
             />
           </div>
-          <span className="text-sm text-emerald-200">
+          <span className={`text-sm ${isLight ? 'text-emerald-800' : 'text-emerald-200'}`}>
             {Math.ceil(localRemaining)}s
           </span>
         </div>
 
         {/* Status */}
         <div className="text-center">
-          <p className="text-white font-medium">
-            {hasBuyRequest
-              ? 'Buy Requested!'
-              : hasPassed
-                ? 'Passed'
-                : 'Buy this card?'}
+          <p className={`${isLight ? 'text-emerald-900' : 'text-white'} font-medium`}>
+            {hasBuyRequest ? 'Buy Requested!' : 'Buy this card?'}
           </p>
-          <p className="text-sm text-emerald-200">
+          <p className={`text-sm ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`}>
             {buysRemaining} buy{buysRemaining !== 1 ? 's' : ''} remaining this round
           </p>
         </div>
 
         {/* Actions */}
         <div className="flex gap-3">
-          {!hasBuyRequest && !hasPassed && canBuy && (
+          {!hasBuyRequest && canBuy && (
             <button
               onClick={handleRequestBuy}
               disabled={buysRemaining <= 0}
@@ -122,15 +112,6 @@ export function BuyActions() {
               className="btn-secondary"
             >
               Cancel Buy
-            </button>
-          )}
-
-          {shouldShowPass && !hasPassed && (
-            <button
-              onClick={handlePassBuy}
-              className="btn-ghost"
-            >
-              Pass
             </button>
           )}
         </div>

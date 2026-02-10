@@ -7,6 +7,7 @@ import { create } from 'zustand';
 interface UIState {
   // Card selection
   selectedCardIds: string[];
+  focusedCardIndex: number;
 
   // Drag and drop
   draggedCardId: string | null;
@@ -23,6 +24,7 @@ interface UIState {
   // Layoff mode
   layoffMode: boolean;
   selectedMeld: { playerId: string; meldIndex: number } | null;
+  focusedMeld: { playerId: string; meldIndex: number } | null;
   wildcardReplaceMode: boolean;
   selectedWildcard: string | null;
 
@@ -60,6 +62,7 @@ interface UIState {
   deselectCard: (cardId: string) => void;
   clearSelection: () => void;
   toggleCardSelection: (cardId: string) => void;
+  setFocusedCardIndex: (index: number) => void;
 
   setDraggedCard: (cardId: string | null) => void;
   setDragOverCard: (cardId: string | null) => void;
@@ -73,6 +76,7 @@ interface UIState {
 
   setLayoffMode: (enabled: boolean) => void;
   setSelectedMeld: (meld: UIState['selectedMeld']) => void;
+  setFocusedMeld: (meld: UIState['focusedMeld']) => void;
   setWildcardReplaceMode: (enabled: boolean) => void;
   setSelectedWildcard: (cardId: string | null) => void;
 
@@ -96,6 +100,7 @@ interface UIState {
 
 const initialState = {
   selectedCardIds: [],
+  focusedCardIndex: -1,
   draggedCardId: null,
   dragOverCardId: null,
   isDragging: false,
@@ -106,6 +111,7 @@ const initialState = {
   zoomedCard: null,
   layoffMode: false,
   selectedMeld: null,
+  focusedMeld: null,
   wildcardReplaceMode: false,
   selectedWildcard: null,
   showHowToPlay: false,
@@ -143,6 +149,8 @@ export const useUIStore = create<UIState>((set) => ({
       : [...state.selectedCardIds, cardId]
   })),
 
+  setFocusedCardIndex: (index) => set({ focusedCardIndex: index }),
+
   // Drag and drop
   setDraggedCard: (cardId) => set({ draggedCardId: cardId }),
   setDragOverCard: (cardId) => set({ dragOverCardId: cardId }),
@@ -158,9 +166,11 @@ export const useUIStore = create<UIState>((set) => ({
   // Layoff
   setLayoffMode: (enabled) => set({
     layoffMode: enabled,
-    selectedMeld: enabled ? null : null
+    selectedMeld: enabled ? null : null,
+    focusedMeld: enabled ? null : null
   }),
   setSelectedMeld: (meld) => set({ selectedMeld: meld }),
+  setFocusedMeld: (meld) => set({ focusedMeld: meld }),
   setWildcardReplaceMode: (enabled) => set({ wildcardReplaceMode: enabled }),
   setSelectedWildcard: (cardId) => set({ selectedWildcard: cardId }),
 

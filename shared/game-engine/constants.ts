@@ -31,7 +31,7 @@ export const MIN_PLAYERS_TO_START = 1;
 
 export const INITIAL_HAND_SIZE = 9;
 
-export const AI_NAMES = ['Alex', 'Jordan', 'Taylor'];
+export const AI_NAMES = ['🤖 Mango', '🤖 Pineapple', '🤖 Coconut', '🤖 Papaya'];
 
 // ===== ROUND REQUIREMENTS =====
 

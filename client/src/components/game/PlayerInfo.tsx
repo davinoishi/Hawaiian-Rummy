@@ -5,6 +5,7 @@
 import { memo, useState, useEffect } from 'react';
 import type { ClientPlayer } from '@shared/game-engine/types';
 import { useGameStore } from '../../store/game-store';
+import { useSettingsStore } from '../../store/settings-store';
 
 interface PlayerInfoProps {
   player: ClientPlayer;
@@ -14,6 +15,8 @@ interface PlayerInfoProps {
 function PlayerInfoComponent({ player, isCurrentTurn }: PlayerInfoProps) {
   const disconnectedPlayers = useGameStore((state) => state.disconnectedPlayers);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
 
   // Find if this player is disconnected
   const disconnectedInfo = disconnectedPlayers.find(d => d.playerId === player.id);
@@ -72,26 +75,26 @@ function PlayerInfoComponent({ player, isCurrentTurn }: PlayerInfoProps) {
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-white font-medium truncate ${isDisconnected ? 'text-gray-300' : ''}`}>
+          <span className={`${isLight ? 'text-emerald-900' : 'text-white'} font-medium truncate ${isDisconnected ? (isLight ? 'text-emerald-600' : 'text-gray-300') : ''}`}>
             {player.name}
           </span>
           {isCurrentTurn && !isDisconnected && (
-            <span className="text-xs text-yellow-400 bg-yellow-400/20 px-1.5 py-0.5 rounded">
+            <span className={`text-xs ${isLight ? 'text-amber-900 bg-amber-200' : 'text-yellow-400 bg-yellow-400/20'} px-1.5 py-0.5 rounded`}>
               Turn
             </span>
           )}
           {isDisconnected && countdown !== null && (
-            <span className="text-xs text-orange-400 bg-orange-400/20 px-1.5 py-0.5 rounded animate-pulse">
+            <span className={`text-xs ${isLight ? 'text-orange-700 bg-orange-200' : 'text-orange-400 bg-orange-400/20'} px-1.5 py-0.5 rounded animate-pulse`}>
               Disconnected ({countdown}s)
             </span>
           )}
           {isAI && !isDisconnected && !player.isMe && (
-            <span className="text-xs text-purple-400 bg-purple-400/20 px-1.5 py-0.5 rounded">
+            <span className={`text-xs ${isLight ? 'text-purple-700 bg-purple-200' : 'text-purple-400 bg-purple-400/20'} px-1.5 py-0.5 rounded`}>
               AI
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs text-emerald-200">
+        <div className={`flex items-center gap-3 text-xs ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`}>
           <span>{player.handSize} cards</span>
           <span>{player.score} pts</span>
           {player.wins > 0 && <span>{player.wins} wins</span>}

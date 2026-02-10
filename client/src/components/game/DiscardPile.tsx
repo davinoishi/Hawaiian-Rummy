@@ -4,7 +4,7 @@
 
 import { useCallback, useState, useEffect } from 'react';
 import { Card } from './Card';
-import { useGameStore, useUIStore } from '../../store';
+import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useHaptics } from '../../hooks';
 import type { Card as CardType } from '@shared/game-engine/types';
 
@@ -17,6 +17,8 @@ export function DiscardPile({ topCard }: DiscardPileProps) {
   const { dragOverDiscard, setDragOverDiscard, discardAnimation } = useUIStore();
   const { takeDiscard, discard } = usePlayerActions();
   const { tap, cardDrop } = useHaptics();
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
 
   // Track local buy window state with a countdown timer
   const [localBuyWindowExpired, setLocalBuyWindowExpired] = useState(false);
@@ -58,12 +60,12 @@ export function DiscardPile({ topCard }: DiscardPileProps) {
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <span className="text-xs text-emerald-300 font-medium">Discard</span>
+      <span className={`text-xs ${isLight ? 'text-emerald-800' : 'text-emerald-300'} font-medium`}>Discard</span>
 
       <div
         className={`
           relative w-16 h-24 sm:w-20 sm:h-28 rounded-lg
-          ${!topCard ? 'border-2 border-dashed border-emerald-600/50' : ''}
+          ${!topCard ? `border-2 border-dashed ${isLight ? 'border-emerald-400' : 'border-emerald-600/50'}` : ''}
           ${canInteract ? 'cursor-pointer' : ''}
           ${dragOverDiscard ? 'ring-2 ring-green-400 bg-green-600/30' : ''}
           ${discardAnimation ? 'animate-meld-snap' : ''}
@@ -87,13 +89,13 @@ export function DiscardPile({ topCard }: DiscardPileProps) {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <span className="text-emerald-600 text-xs">Empty</span>
+            <span className={`${isLight ? 'text-emerald-600' : 'text-emerald-600'} text-xs`}>Empty</span>
           </div>
         )}
 
         {/* Take indicator */}
         {canInteract && topCard && (
-          <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-yellow-400 whitespace-nowrap">
+          <div className={`absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] ${isLight ? 'text-amber-700 font-medium' : 'text-yellow-400'} whitespace-nowrap`}>
             Click to take
           </div>
         )}

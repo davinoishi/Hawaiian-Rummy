@@ -2,7 +2,7 @@
  * GameBoard - Main game playing area
  */
 
-import { useGameStore, useUIStore, selectTopDiscard, selectOpponents } from '../../store';
+import { useGameStore, useUIStore, useSettingsStore, selectTopDiscard, selectOpponents } from '../../store';
 import { PlayerHand } from './PlayerHand';
 import { MeldArea } from './MeldArea';
 import { ActionBar } from '../actions/ActionBar';
@@ -11,6 +11,7 @@ import { DeckArea } from './DeckArea';
 import { PlayerInfo } from './PlayerInfo';
 import { RoundInfo } from './RoundInfo';
 import { BuyActions } from '../actions/BuyActions';
+import { ChatPanel } from './ChatPanel';
 import { ROUND_REQUIREMENTS } from '@shared/game-engine/constants';
 
 export function GameBoard() {
@@ -28,6 +29,8 @@ export function GameBoard() {
   const topDiscard = useGameStore(selectTopDiscard);
   const opponents = useGameStore(selectOpponents);
   const myPlayer = players?.find(p => p.isMe);
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
 
   // Ensure boolean values
   const isMyTurn = rawIsMyTurn ?? false;
@@ -81,16 +84,16 @@ export function GameBoard() {
         <div className="panel p-4 mt-auto">
           {/* My score */}
           {myPlayer && (
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-emerald-700/50">
+            <div className={`flex items-center justify-between mb-3 pb-2 border-b ${isLight ? 'border-emerald-300' : 'border-emerald-700/50'}`}>
               <div className="flex items-center gap-2">
-                <span className="text-white font-medium">{myPlayer.name}</span>
+                <span className={`${isLight ? 'text-emerald-900' : 'text-white'} font-medium`}>{myPlayer.name}</span>
                 {isMyTurn && (
-                  <span className="text-xs text-yellow-400 bg-yellow-400/20 px-1.5 py-0.5 rounded">
+                  <span className={`text-xs ${isLight ? 'text-amber-900 bg-amber-200' : 'text-yellow-400 bg-yellow-400/20'} px-1.5 py-0.5 rounded`}>
                     Your Turn
                   </span>
                 )}
               </div>
-              <div className="text-emerald-200 text-sm">
+              <div className={`${isLight ? 'text-emerald-700' : 'text-emerald-200'} text-sm`}>
                 <span className="font-medium">{myPlayer.score}</span> pts
                 {myPlayer.wins > 0 && <span className="ml-2">{myPlayer.wins} wins</span>}
               </div>
@@ -117,6 +120,9 @@ export function GameBoard() {
           <ActionBar />
         </div>
       </div>
+
+      {/* Chat panel */}
+      <ChatPanel />
     </div>
   );
 }

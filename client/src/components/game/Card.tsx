@@ -61,6 +61,9 @@ function CardComponent({
     lg: 'w-20 h-28 text-xl'
   };
 
+  // Don't show center suit for small cards (cleaner look in melds)
+  const showCenterSuit = size !== 'sm';
+
   // Card back
   if (showBack) {
     return (
@@ -122,10 +125,12 @@ function CardComponent({
             <span className="text-sm sm:text-base">{card.suit}</span>
           </div>
 
-          {/* Center suit */}
-          <div className={`flex-1 flex items-center justify-center ${suitColor}`}>
-            <span className="text-2xl sm:text-3xl">{card.suit}</span>
-          </div>
+          {/* Center suit - only for medium and large cards */}
+          {showCenterSuit && (
+            <div className={`flex-1 flex items-center justify-center ${suitColor}`}>
+              <span className="text-2xl sm:text-3xl">{card.suit}</span>
+            </div>
+          )}
 
           {/* Wild indicator */}
           {isWild && (

@@ -4,7 +4,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { Card } from './Card';
-import { useGameStore, useUIStore } from '../../store';
+import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { useCardSelection, usePlayerActions, useHaptics } from '../../hooks';
 import type { Card as CardType } from '@shared/game-engine/types';
 import { sortCardsByRank, groupByRank, groupBySuit } from '@shared/game-engine/card-utils';
@@ -14,6 +14,9 @@ type SortMode = 'none' | 'rank' | 'suit';
 export function PlayerHand() {
   const myHand = useGameStore((state) => state.myHand) || [];
   const isMyTurn = useGameStore((state) => state.isMyTurn);
+  const focusedCardIndex = useUIStore((state) => state.focusedCardIndex);
+  const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
+  const isLight = resolvedTheme === 'light';
   const {
     selectedCardIds,
     handleCardClick,
@@ -114,75 +117,93 @@ export function PlayerHand() {
     );
   }
 
+  // Map sorted hand indices back to original hand indices for focus tracking
+  const getFocusedCardId = () => {
+    if (focusedCardIndex >= 0 && focusedCardIndex < myHand.length) {
+      return myHand[focusedCardIndex]?.id;
+    }
+    return null;
+  };
+  const focusedCardId = getFocusedCardId();
+
   return (
     <div className="space-y-4">
-      {/* Sort buttons */}
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-white font-medium">
+        <h3 className={`${isLight ? 'text-emerald-900' : 'text-white'} font-medium`}>
           Your Hand ({myHand.length} cards)
           {selectedCardIds.length > 0 && (
-            <span className="text-emerald-200 font-normal ml-2">
+            <span className={`${isLight ? 'text-emerald-700' : 'text-emerald-200'} font-normal ml-2`}>
               • {selectedCardIds.length} selected
             </span>
           )}
         </h3>
-        <div className="flex gap-2">
-          <button
-            onClick={() => handleSort('rank')}
-            className="btn-ghost px-3 py-1 text-sm"
-          >
-            Sort by Rank
-          </button>
-          <button
-            onClick={() => handleSort('suit')}
-            className="btn-ghost px-3 py-1 text-sm"
-          >
-            Sort by Suit
-          </button>
-        </div>
       </div>
 
       {/* Cards */}
       <div className="flex flex-wrap gap-1 sm:gap-2 justify-center">
-        {sortedHand.map((card, index) => (
-          <div
-            key={card.id}
-            className="relative"
-            onDragOver={(e) => {
-              e.preventDefault();
-              handleDragOver(e, card.id);
-            }}
-            onDragLeave={handleDragLeave}
-            onDrop={() => handleDropOnCard(card.id, handleReorder)}
-          >
-            {/* Drop indicator */}
-            {dragOverCardId === card.id && draggedCardId !== card.id && (
-              <div className="absolute -left-1 top-0 bottom-0 w-1 bg-blue-500 rounded-full z-10 animate-pulse" />
-            )}
-
-            <Card
-              card={card}
-              isSelected={isCardSelected(card.id)}
-              isHighlighted={isCardHighlighted(card.id)}
-              isDragging={draggedCardId === card.id}
-              isDisabled={!isMyTurn}
-              onClick={() => handleCardClick(card.id)}
-              onDragStart={(e) => handleDragStart(e, card.id)}
-              onDragEnd={handleDragEnd}
-              onTouchStart={(e) => handleTouchStart(e, card.id, { rank: card.rank, suit: card.suit })}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={(e) => handleTouchEnd(
-                e,
-                () => handleCardClick(card.id),
-                (x, y) => {
-                  // Handle touch drop - would need to detect target element
-                }
+        {sortedHand.map((card, index) => {
+          const isFocused = card.id === focusedCardId;
+          return (
+            <div
+              key={card.id}
+              className="relative"
+              onDragOver={(e) => {
+                e.preventDefault();
+                handleDragOver(e, card.id);
+              }}
+              onDragLeave={handleDragLeave}
+              onDrop={() => handleDropOnCard(card.id, handleReorder)}
+            >
+              {/* Drop indicator */}
+              {dragOverCardId === card.id && draggedCardId !== card.id && (
+                <div className="absolute -left-1 top-0 bottom-0 w-1 bg-blue-500 rounded-full z-10 animate-pulse" />
               )}
-            />
-          </div>
-        ))}
+
+              {/* Keyboard focus indicator */}
+              {isFocused && (
+                <div className="absolute -inset-1 border-2 border-cyan-400 rounded-lg z-10 pointer-events-none animate-pulse" />
+              )}
+
+              <Card
+                card={card}
+                isSelected={isCardSelected(card.id)}
+                isHighlighted={isCardHighlighted(card.id)}
+                isDragging={draggedCardId === card.id}
+                isDisabled={!isMyTurn}
+                onClick={() => handleCardClick(card.id)}
+                onDragStart={(e) => handleDragStart(e, card.id)}
+                onDragEnd={handleDragEnd}
+                onTouchStart={(e) => handleTouchStart(e, card.id, { rank: card.rank, suit: card.suit })}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={(e) => handleTouchEnd(
+                  e,
+                  () => handleCardClick(card.id),
+                  (x, y) => {
+                    // Handle touch drop - would need to detect target element
+                  }
+                )}
+              />
+            </div>
+          );
+        })}
       </div>
 
+      {/* Sort buttons - bottom left */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => handleSort('rank')}
+          className="btn-ghost px-3 py-1 text-sm"
+        >
+          Sort by Rank
+        </button>
+        <button
+          onClick={() => handleSort('suit')}
+          className="btn-ghost px-3 py-1 text-sm"
+        >
+          Sort by Suit
+        </button>
+      </div>
     </div>
   );
 }

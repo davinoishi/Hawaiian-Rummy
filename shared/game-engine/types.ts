@@ -62,6 +62,16 @@ export interface BuyRequest {
   timestamp: number;
 }
 
+// ===== CHAT MESSAGE TYPES =====
+
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  message: string;
+  timestamp: number;
+}
+
 // ===== GAME PHASE TYPES =====
 
 export type GamePhase =
@@ -105,6 +115,9 @@ export interface GameState {
   // Tutorial mode
   tutorialMode: boolean;
   tutorialStep?: number;
+
+  // Host tracking (for rematch functionality)
+  hostPlayerId?: string;
 }
 
 // ===== ACTION TYPES =====

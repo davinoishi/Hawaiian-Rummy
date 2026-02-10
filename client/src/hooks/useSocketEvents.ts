@@ -9,7 +9,7 @@ import type { Socket } from 'socket.io-client';
 import { useUIStore } from '../store/ui-store';
 import { useAudio } from './useAudio';
 import { useHaptics } from './useHaptics';
-import type { ClientGameState } from '@shared/game-engine/types';
+import type { ClientGameState, ChatMessage } from '@shared/game-engine/types';
 
 interface LobbyUpdate {
   roomId: string;
@@ -51,6 +51,16 @@ interface PlayerTakenOverByAIData {
   playerName: string;
 }
 
+interface RematchVoteUpdateData {
+  votes: string[];
+  votedCount: number;
+  total: number;
+}
+
+interface PasswordRequiredData {
+  roomId: string;
+}
+
 export function useSocketEvents() {
   const socket = useSocketStore((state) => state.socket);
 
@@ -64,6 +74,10 @@ export function useSocketEvents() {
     addDisconnectedPlayer: useGameStore.getState().addDisconnectedPlayer,
     removeDisconnectedPlayer: useGameStore.getState().removeDisconnectedPlayer,
     clearDisconnectedPlayers: useGameStore.getState().clearDisconnectedPlayers,
+    addChatMessage: useGameStore.getState().addChatMessage,
+    clearChatMessages: useGameStore.getState().clearChatMessages,
+    setRematchVotes: useGameStore.getState().setRematchVotes,
+    setHasVotedForRematch: useGameStore.getState().setHasVotedForRematch,
     saveGameSession: useSocketStore.getState().saveGameSession,
     clearGameSession: useSocketStore.getState().clearGameSession,
     setBuyNotification: useUIStore.getState().setBuyNotification,
@@ -270,6 +284,37 @@ export function useSocketEvents() {
       useGameStore.getState().setAppPhase('join');
     };
 
+    // Password events
+    const handlePasswordRequired = (data: PasswordRequiredData) => {
+      console.log('[CLIENT] passwordRequired received:', data);
+      callbacks.setErrorMessage('This room requires a password');
+    };
+
+    const handleInvalidPassword = (data: PasswordRequiredData) => {
+      console.log('[CLIENT] invalidPassword received:', data);
+      callbacks.setErrorMessage('Invalid password');
+    };
+
+    // Chat events
+    const handleChatMessage = (msg: ChatMessage) => {
+      console.log('[CLIENT] chatMessage received:', msg.playerName);
+      callbacks.addChatMessage(msg);
+    };
+
+    // Rematch events
+    const handleRematchVoteUpdate = (data: RematchVoteUpdateData) => {
+      console.log('[CLIENT] rematchVoteUpdate received:', data);
+      callbacks.setRematchVotes(data);
+    };
+
+    const handleRematchStarting = () => {
+      console.log('[CLIENT] rematchStarting received');
+      callbacks.setRematchVotes(null);
+      callbacks.setHasVotedForRematch(false);
+      callbacks.clearChatMessages();
+      useGameStore.getState().setAppPhase('lobby');
+    };
+
     // Register event listeners
     socket.on('lobbyUpdate', handleLobbyUpdate);
     socket.on('gameStarted', handleGameStarted);
@@ -287,6 +332,11 @@ export function useSocketEvents() {
     socket.on('playerTakenOverByAI', handlePlayerTakenOverByAI);
     socket.on('gameAlreadyStarted', handleGameAlreadyStarted);
     socket.on('gameFull', handleGameFull);
+    socket.on('passwordRequired', handlePasswordRequired);
+    socket.on('invalidPassword', handleInvalidPassword);
+    socket.on('chatMessage', handleChatMessage);
+    socket.on('rematchVoteUpdate', handleRematchVoteUpdate);
+    socket.on('rematchStarting', handleRematchStarting);
 
     console.log('[useSocketEvents] All listeners registered');
 
@@ -310,6 +360,11 @@ export function useSocketEvents() {
       socket.off('playerTakenOverByAI', handlePlayerTakenOverByAI);
       socket.off('gameAlreadyStarted', handleGameAlreadyStarted);
       socket.off('gameFull', handleGameFull);
+      socket.off('passwordRequired', handlePasswordRequired);
+      socket.off('invalidPassword', handleInvalidPassword);
+      socket.off('chatMessage', handleChatMessage);
+      socket.off('rematchVoteUpdate', handleRematchVoteUpdate);
+      socket.off('rematchStarting', handleRematchStarting);
     };
   }, [socket]); // Only depend on socket
 }
