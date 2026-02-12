@@ -13,8 +13,7 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 ### Game Mechanics
 - **Multi-Room Support**: Create or join independent game rooms for simultaneous games
 - 4 players per room (at least one human is required, and AI opponents will fill any open spots)
-- **AI Players**: Intelligent AI opponents automatically fill empty seats
-- **Offline Mode (PWA)**: Play against AI without internet connection - installable as a Progressive Web App
+- **AI Players**: Intelligent AI opponents with personality-based strategies that automatically fill empty seats
 - 10 rounds with increasing difficulty
 - Complete buy mechanism with priority system
 - Sets, runs, wildcards (2s and Jokers), and layoff functionality
@@ -44,7 +43,7 @@ Play now at: **https://gdlnmnsw4amo.nobgp.com**
 - Card zoom on long-press for better visibility
 - **Light/Dark Theme**: Choose your preferred color scheme or use system default
 - **Settings Panel**: Customize sound, haptics, and theme preferences
-- **Offline Status Indicator**: Shows connection status with visual indicator
+- **Connection Status Indicator**: Shows online/offline connection status
 
 ## Tech Stack
 
@@ -142,8 +141,8 @@ hawaiian-rummy/
 │   │   │   ├── modals/        # HowToPlayModal, WildcardPositionModal
 │   │   │   ├── profile/       # PlayerProfile, Leaderboard
 │   │   │   └── ui/            # Notifications, Tutorial, SettingsPanel, OnlineStatusIndicator
-│   │   ├── hooks/             # Custom React hooks (useLocalGame, useOnlineStatus, etc.)
-│   │   ├── services/          # Local game runner for offline play
+│   │   ├── hooks/             # Custom React hooks (useOnlineStatus, usePlayerActions, etc.)
+│   │   ├── services/          # Client-side services
 │   │   ├── store/             # Zustand state stores (game, UI, settings, profile)
 │   │   └── styles/            # Tailwind CSS
 │   ├── public/
@@ -201,12 +200,13 @@ To test with multiple players:
 
 ## Recent Updates
 
-- **v2.3.0**: Offline/PWA mode - play against AI without internet connection
-  - Progressive Web App with service worker for asset caching
-  - Isomorphic game engine runs client-side for offline play
-  - Offline mode indicator and seamless online/offline switching
-  - Fixed wildcard run creation bug in offline mode
-  - Fixed buy window timer display
+- **v2.4.0**: AI improvements and speed optimizations
+  - Smarter AI buying: hand size penalty, dynamic max buys per round
+  - AI personalities with bottleneck-focused strategies
+  - Buy timer auto-skips when no one would buy
+  - Multi-card layoff to same meld
+  - Fixed wildcard layoff on Ace-high runs
+  - Removed offline mode for simplified codebase
 - **v2.2.0**: Social features and UI improvements
   - Private rooms with password protection
   - Shareable invite links with embedded room code and password

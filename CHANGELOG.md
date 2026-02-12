@@ -2,6 +2,43 @@
 
 All notable changes to Hawaiian Rummy will be documented in this file.
 
+## [v2.4.0] - 2026-02-11
+
+### AI Improvements
+- **Smarter Buy Decisions**: AI now considers hand size before buying
+  - Hand size penalty: Progressive penalty when AI would have excess cards after going down
+  - Dynamic max buys per round: Early rounds (1-4) limit to 1 buy, later rounds allow more as needed
+  - Prevents AI from over-buying and accumulating too many cards to discard
+- **Bottleneck-Focused Strategy**: AI prioritizes cards that help complete the hardest meld (usually runs)
+- **Pair Value Fix**: AI no longer buys cards just to make pairs unless sets are the bottleneck
+- **Layoff Awareness**: AI checks if discard pile card can be laid off to existing melds
+- **Opponent Awareness**: Heavy penalty for discarding cards the next player can immediately lay off
+- **AI Personalities**: Four personality types (Aggressive, Conservative, Strategic, Balanced) with different play styles
+
+### Speed of Play Improvements
+- **Smart Buy Timer Skip**: Buy countdown timer automatically skips when:
+  - All players have met their meld requirements (no one would buy)
+  - All players have used their maximum buys for the round
+- **Multi-Card Layoff**: Can now select and lay off multiple cards to the same meld at once
+
+### Bug Fixes
+- **Run Validation**: Fixed Ace handling in runs - Ace can now be added to start of runs ending in K
+- **Wildcard Layoff**: Fixed wildcard being placed at wrong end of Ace-high runs (10-J-Q-K-A)
+  - Wildcards now correctly placed at beginning (as 9) instead of incorrectly at end
+
+### Architecture Changes
+- **Removed Offline Mode**: Local/offline game mode has been removed
+  - Game now requires internet connection to play
+  - Simplified codebase by removing dual online/offline code paths
+  - Shows "No Internet Connection" message when offline instead of fallback mode
+- **Removed Files**: `client/src/services/local-game.ts`, `client/src/hooks/useLocalGame.ts`
+
+### Technical Changes
+- AI personalities system in `shared/ai/ai-personalities.ts`
+- Round strategy configuration with bottleneck analysis
+- Server-side buy window skip logic in `server/game-manager.ts`
+- Simplified `usePlayerActions` hook - all actions now socket-based only
+
 ## [v2.1.0] - 2026-02-08
 
 ### Player Disconnect Handling

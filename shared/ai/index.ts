@@ -15,3 +15,16 @@ export type {
 export { createAIContext } from './ai-strategy';
 
 export { StandardAIStrategy } from './standard-ai';
+
+export type {
+  AIPersonality,
+  RoundStrategy
+} from './ai-personalities';
+
+export {
+  AI_PERSONALITIES,
+  ROUND_STRATEGIES,
+  getRoundStrategy,
+  getPersonality,
+  getRandomPersonality
+} from './ai-personalities';

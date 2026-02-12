@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSocketStore, useGameStore, useSettingsStore } from '../../store';
-import { useAudio, useOnlineStatus, useLocalGame } from '../../hooks';
+import { useAudio } from '../../hooks';
 
 interface JoinScreenProps {
   onViewProfile?: () => void;
@@ -16,8 +16,6 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
   const emit = useSocketStore((state) => state.emit);
   const setPlayerName = useGameStore((state) => state.setPlayerName);
   const { playClick } = useAudio();
-  const { isOnline } = useOnlineStatus();
-  const { createLocalGame } = useLocalGame();
 
   const [name, setName] = useState('');
   const [joinRoomId, setJoinRoomId] = useState('');
@@ -26,7 +24,6 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [showJoinInput, setShowJoinInput] = useState(false);
-  const [numAI, setNumAI] = useState(3);
 
   // Parse URL parameters on mount
   useEffect(() => {
@@ -100,15 +97,6 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
     emit('createRoom', 'Tutorial Player', true);
   };
 
-  const handlePlayOffline = () => {
-    if (!name.trim()) {
-      setError('Please enter your name');
-      return;
-    }
-    playClick();
-    createLocalGame(name.trim(), numAI);
-  };
-
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="panel p-6 sm:p-8 w-full max-w-md">
@@ -153,35 +141,8 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
           />
         </div>
 
-        {/* Offline Play Section - shown when offline */}
-        {!isOnline && (
-          <div className="mb-6">
-            <div className="mb-3">
-              <label className="block text-sm text-emerald-200 mb-2">
-                Number of AI Opponents
-              </label>
-              <select
-                value={numAI}
-                onChange={(e) => setNumAI(Number(e.target.value))}
-                className="input w-full"
-              >
-                <option value={1}>1 AI Opponent</option>
-                <option value={2}>2 AI Opponents</option>
-                <option value={3}>3 AI Opponents</option>
-              </select>
-            </div>
-            <button
-              onClick={handlePlayOffline}
-              disabled={isJoining}
-              className="btn-primary w-full py-3 text-lg"
-            >
-              {isJoining ? 'Starting...' : 'Play vs AI'}
-            </button>
-          </div>
-        )}
-
-        {/* Online game buttons - only shown when online */}
-        {isOnline && !showJoinInput && (
+        {/* Game buttons */}
+        {!showJoinInput && (
           <>
             <button
               onClick={handleCreateRoom}
@@ -201,8 +162,8 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
           </>
         )}
 
-        {/* Join room form - only shown when online */}
-        {isOnline && showJoinInput && (
+        {/* Join room form */}
+        {showJoinInput && (
           <>
             {/* Room code input */}
             <div className="mb-4">
@@ -271,7 +232,7 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
         <div className="pt-6 border-t border-white/20">
           <button
             onClick={handleStartTutorial}
-            disabled={isJoining || !isOnline}
+            disabled={isJoining}
             className="btn-ghost w-full py-3 text-emerald-200"
           >
             Learn How to Play (Tutorial)

@@ -2,20 +2,23 @@
 
 ## Overview
 
-Hawaiian Rummy features intelligent AI players that automatically fill empty slots to ensure 4-player games. The AI system has been completely rewritten in TypeScript as part of the v2.0.0 architecture overhaul.
+Hawaiian Rummy features intelligent AI players that automatically fill empty slots to ensure 4-player games. The AI system uses personality-based strategies with bottleneck-focused decision-making.
 
 ## Architecture
 
 ### File Structure
 
 ```
-server/
+shared/
 ├── ai/
 │   ├── index.ts              # AI module exports
+│   ├── ai-strategy.ts        # Base strategy interface and context
+│   ├── ai-personalities.ts   # AI personality types and round strategies
+│   └── standard-ai.ts        # Standard AI strategy implementation
+server/
+├── ai/
 │   ├── ai-manager.ts         # AI player lifecycle management
-│   ├── ai-strategy.ts        # Base strategy interface
-│   └── strategies/
-│       └── standard-ai.ts    # Default AI strategy implementation
+│   └── ...
 ```
 
 ### Key Components
@@ -43,17 +46,46 @@ server/
 
 ### AI Decision-Making
 
-The AI uses strategic heuristics to play competently:
+The AI uses strategic heuristics with personality-based decision-making:
+
+## AI Personalities
+
+Four personality types provide variety in play styles:
+
+| Personality | Buy Aggression | Bottleneck Focus | Risk Tolerance |
+|-------------|----------------|------------------|----------------|
+| Aggressive  | 0.9            | 0.7              | 0.6            |
+| Conservative| 0.6            | 0.5              | 0.3            |
+| Strategic   | 0.75           | 0.95             | 0.4            |
+| Balanced    | 0.7            | 0.7              | 0.5            |
+
+## Round Strategy
+
+Each round has a calculated strategy based on requirements:
+
+- **Bottleneck Type**: Identifies if sets or runs are harder (runs usually are)
+- **Bottleneck Size**: The size of the hardest meld requirement
+- **Target Hand Size**: Ideal number of cards to aim for
+- **Buy Threshold Modifier**: Adjusts how aggressively to buy
+
+## Decision-Making
 
 #### Draw Phase
 - Evaluates whether discard card is useful for forming sets/runs
 - Takes discard if useful, otherwise draws from deck
 - Considers wildcards highly valuable
+- **If requirements met**: Only takes discard if card can be immediately laid off
 
-#### Buy Phase
-- Requests to buy discarded cards that help complete melds
-- Respects buy limits per round
-- Passes when card isn't useful
+#### Buy Phase (v2.4.0 Improvements)
+- **Hand Size Penalty**: Progressive penalty when hand would exceed cards needed
+- **Dynamic Max Buys**: Early rounds limit to 1 buy, later rounds allow more
+  - Round 1-4: Max 1 buy (already have enough cards)
+  - Round 5-6: Max 2 buys
+  - Round 7-8: Max 3 buys
+  - Round 9-10: Max 4 buys
+- **Layoff Check**: Values cards that can be laid off after going down
+- **Pair Value Fix**: Only values pairs highly if sets are the bottleneck
+- Won't buy just to block opponents if card isn't useful
 
 #### Meld Phase
 - **IMPORTANT**: Only creates melds if it can meet ALL round requirements
@@ -66,7 +98,9 @@ The AI uses strategic heuristics to play competently:
 - Cancels incomplete melds before discarding if needed
 - Chooses to discard high-point, low-utility cards
 - Keeps wildcards and useful cards for future melds
-- Avoids discarding cards that would help opponents
+- **Next Player Awareness**: Heavy penalty (-30) for discarding cards the next player can immediately lay off
+- **Opponent Meld Check**: Checks all opponent melds before discarding
+- **If requirements met**: Prioritizes discarding highest point cards first (minimizes penalty if someone else goes out)
 
 #### Layoff Phase
 - After meeting requirements, tries to layoff high-value cards
@@ -169,8 +203,8 @@ Then:
 ## Future Improvements
 
 Potential enhancements:
-- Multiple difficulty levels (easy/medium/hard)
-- More sophisticated meld optimization
+- Multiple difficulty levels (easy/medium/hard) - currently all personalities are competitive
 - Opponent hand tracking and probability analysis
 - Learning from player patterns
-- Adaptive strategy based on game state
+- Late round suit focusing for long runs (7-10 cards)
+- "Going out speed" estimation after meeting requirements

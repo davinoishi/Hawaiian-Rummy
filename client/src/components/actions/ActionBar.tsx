@@ -32,7 +32,7 @@ export function ActionBar() {
   const canCreateSet = selectedCount >= 3;
   const canCreateRun = selectedCount >= 4;
   const canDiscard = selectedCount === 1 && isMyTurn && !canDraw;
-  const canLayoff = hasMetRequirements && selectedCount === 1 && isMyTurn;
+  const canLayoff = hasMetRequirements && selectedCount >= 1 && isMyTurn;
 
   // Handle creating a set
   const handleCreateSet = useCallback(() => {
@@ -66,16 +66,25 @@ export function ActionBar() {
     }
   }, [playClick, tap, layoffMode, setLayoffMode]);
 
-  // Handle confirming layoff
+  // Handle confirming layoff (supports multiple cards)
   const handleConfirmLayoff = useCallback(() => {
-    if (!selectedMeld || selectedCardIds.length !== 1) return;
+    if (!selectedMeld || selectedCardIds.length < 1) return;
+
+    // Save card IDs before loop (layoffCard clears selection after each call)
+    const cardIdsToLayoff = [...selectedCardIds];
+
     playMeldCreate();
     meldCreate();
-    layoffCard(
-      selectedCardIds[0],
-      selectedMeld.playerId,
-      selectedMeld.meldIndex
-    );
+
+    // Layoff each selected card to the same meld
+    for (const cardId of cardIdsToLayoff) {
+      layoffCard(
+        cardId,
+        selectedMeld.playerId,
+        selectedMeld.meldIndex
+      );
+    }
+
     setLayoffMode(false);
   }, [selectedMeld, selectedCardIds, playMeldCreate, meldCreate, layoffCard, setLayoffMode]);
 
@@ -135,14 +144,14 @@ export function ActionBar() {
       {layoffMode && (
         <div className={`p-3 rounded-lg ${isLight ? 'bg-amber-100 border-amber-400' : 'bg-yellow-500/20 border-yellow-500/50'} border text-center`}>
           <p className={`${isLight ? 'text-amber-800' : 'text-yellow-200'} text-sm mb-2`}>
-            Select a card and click on a meld to lay off
+            Select card(s) and click on a meld to lay off
           </p>
-          {selectedMeld && selectedCardIds.length === 1 && (
+          {selectedMeld && selectedCardIds.length >= 1 && (
             <button
               onClick={handleConfirmLayoff}
               className="btn-primary"
             >
-              Confirm Layoff
+              Confirm Layoff ({selectedCardIds.length} card{selectedCardIds.length > 1 ? 's' : ''})
             </button>
           )}
         </div>

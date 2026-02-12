@@ -268,11 +268,50 @@ export class GameManager {
   }
 
   /**
+   * Check if buy window should be skipped
+   * Returns true if no one can or would want to buy
+   */
+  shouldSkipBuyWindow(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room) return false;
+
+    const state = room.state;
+    const maxBuys = ROUND_REQUIREMENTS[state.currentRound]?.maxBuys || 3;
+
+    // Skip if every player either can't buy or won't buy
+    // A player can't buy if: buyCount >= maxBuys
+    // A player won't buy if: hasMetRequirements (no incentive)
+    const playerStatuses = state.players.map(playerId => {
+      const playerState = state.playerStates[playerId];
+      if (!playerState) return { playerId, cantBuy: true, wontBuy: true, skip: true };
+
+      const cantBuy = playerState.buyCount >= maxBuys;
+      const wontBuy = playerState.hasMetRequirements;
+
+      return { playerId, cantBuy, wontBuy, skip: cantBuy || wontBuy };
+    });
+
+    const noOneWouldBuy = playerStatuses.every(p => p.skip);
+
+    console.log(`[BUY WINDOW] shouldSkipBuyWindow: room=${roomId}, round=${state.currentRound}, maxBuys=${maxBuys}`);
+    console.log(`[BUY WINDOW] playerStatuses:`, JSON.stringify(playerStatuses));
+    console.log(`[BUY WINDOW] noOneWouldBuy: ${noOneWouldBuy}`);
+
+    return noOneWouldBuy;
+  }
+
+  /**
    * Check if buy window is active
    */
   isBuyWindowActive(roomId: string): boolean {
     const room = this.rooms.get(roomId);
     if (!room || !room.state.lastDiscardTimestamp) return false;
+
+    // Check if we should skip the buy window
+    if (this.shouldSkipBuyWindow(roomId)) {
+      return false;
+    }
+
     const elapsed = Date.now() - room.state.lastDiscardTimestamp;
     return elapsed < BUY_WINDOW_DURATION;
   }
@@ -283,6 +322,12 @@ export class GameManager {
   getBuyWindowRemaining(roomId: string): number {
     const room = this.rooms.get(roomId);
     if (!room || !room.state.lastDiscardTimestamp) return 0;
+
+    // Check if we should skip the buy window
+    if (this.shouldSkipBuyWindow(roomId)) {
+      return 0;
+    }
+
     const elapsed = Date.now() - room.state.lastDiscardTimestamp;
     return Math.max(0, Math.ceil((BUY_WINDOW_DURATION - elapsed) / 1000));
   }

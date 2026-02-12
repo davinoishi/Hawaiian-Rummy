@@ -113,9 +113,11 @@ export interface AIContext {
   currentRound: number;
   buyCount: number;
   maxBuys: number;
+  buysRemaining: number;
   discardPile: Card[];
   topDiscard: Card | undefined;
   allPlayerMelds: Array<{ playerId: string; melds: Meld[] }>;
+  discardHistory: Card[];  // All cards discarded this round for opponent tracking
 }
 
 /**
@@ -125,6 +127,8 @@ export function createAIContext(state: GameState, aiId: string): AIContext {
   const playerState = state.playerStates[aiId];
   const roundReq = getRoundRequirements(state.currentRound);
 
+  const buyCount = playerState?.buyCount || 0;
+
   return {
     state,
     aiId,
@@ -132,14 +136,16 @@ export function createAIContext(state: GameState, aiId: string): AIContext {
     melds: playerState?.melds || [],
     hasMetRequirements: playerState?.hasMetRequirements || false,
     currentRound: state.currentRound,
-    buyCount: playerState?.buyCount || 0,
+    buyCount,
     maxBuys: roundReq.maxBuys,
+    buysRemaining: roundReq.maxBuys - buyCount,
     discardPile: state.discardPile,
     topDiscard: state.discardPile[state.discardPile.length - 1],
     allPlayerMelds: state.players.map(id => ({
       playerId: id,
       melds: state.playerStates[id]?.melds || []
-    }))
+    })),
+    discardHistory: state.discardPile || []  // Full discard pile as history
   };
 }
 

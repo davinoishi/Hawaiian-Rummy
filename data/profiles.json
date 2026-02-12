@@ -4,17 +4,24 @@
     "nickname": "🤖 Mango",
     "isAI": true,
     "createdAt": "2026-02-09T16:41:15.625Z",
-    "lastActiveAt": "2026-02-09T21:02:46.623Z",
+    "lastActiveAt": "2026-02-11T02:45:25.179Z",
     "stats": {
-      "gamesPlayed": 1,
+      "gamesPlayed": 2,
       "gamesWon": 0,
-      "roundsPlayed": 10,
-      "goingOutCount": 1,
-      "totalScore": 900,
+      "roundsPlayed": 20,
+      "goingOutCount": 2,
+      "totalScore": 1730,
       "currentWinStreak": 0,
       "longestWinStreak": 0
     },
     "bestGameScores": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 830,
+        "playerCount": 0,
+        "placement": 2
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -30,9 +37,26 @@
         "score": 900,
         "playerCount": 0,
         "placement": 2
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 830,
+        "playerCount": 0,
+        "placement": 2
       }
     ],
     "recentGames": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "playerCount": 0,
+        "myScore": 830,
+        "placement": 2,
+        "won": false,
+        "goingOutCount": 1,
+        "roundsPlayed": 10
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -50,13 +74,13 @@
     "nickname": "🤖 Pineapple",
     "isAI": true,
     "createdAt": "2026-02-09T16:41:15.625Z",
-    "lastActiveAt": "2026-02-09T21:02:46.623Z",
+    "lastActiveAt": "2026-02-11T02:45:25.179Z",
     "stats": {
-      "gamesPlayed": 1,
+      "gamesPlayed": 2,
       "gamesWon": 0,
-      "roundsPlayed": 10,
+      "roundsPlayed": 20,
       "goingOutCount": 0,
-      "totalScore": 1000,
+      "totalScore": 2095,
       "currentWinStreak": 0,
       "longestWinStreak": 0
     },
@@ -67,9 +91,23 @@
         "score": 1000,
         "playerCount": 0,
         "placement": 4
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 1095,
+        "playerCount": 0,
+        "placement": 4
       }
     ],
     "worstGameScores": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 1095,
+        "playerCount": 0,
+        "placement": 4
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -79,6 +117,16 @@
       }
     ],
     "recentGames": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "playerCount": 0,
+        "myScore": 1095,
+        "placement": 4,
+        "won": false,
+        "goingOutCount": 0,
+        "roundsPlayed": 10
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -96,13 +144,13 @@
     "nickname": "🤖 Coconut",
     "isAI": true,
     "createdAt": "2026-02-09T16:41:15.625Z",
-    "lastActiveAt": "2026-02-09T21:02:46.623Z",
+    "lastActiveAt": "2026-02-11T02:45:25.179Z",
     "stats": {
-      "gamesPlayed": 1,
+      "gamesPlayed": 2,
       "gamesWon": 0,
-      "roundsPlayed": 10,
+      "roundsPlayed": 20,
       "goingOutCount": 2,
-      "totalScore": 920,
+      "totalScore": 1845,
       "currentWinStreak": 0,
       "longestWinStreak": 0
     },
@@ -113,9 +161,23 @@
         "score": 920,
         "playerCount": 0,
         "placement": 3
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 925,
+        "playerCount": 0,
+        "placement": 3
       }
     ],
     "worstGameScores": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 925,
+        "playerCount": 0,
+        "placement": 3
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -125,6 +187,16 @@
       }
     ],
     "recentGames": [
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "playerCount": 0,
+        "myScore": 925,
+        "placement": 3,
+        "won": false,
+        "goingOutCount": 0,
+        "roundsPlayed": 10
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",
@@ -161,17 +233,59 @@
     "nickname": "Davin",
     "isAI": false,
     "createdAt": "2026-02-09T17:13:34.555Z",
-    "lastActiveAt": "2026-02-09T21:02:46.623Z",
+    "lastActiveAt": "2026-02-12T06:21:03.464Z",
     "stats": {
-      "gamesPlayed": 2,
-      "gamesWon": 2,
-      "roundsPlayed": 20,
-      "goingOutCount": 13,
-      "totalScore": 595,
-      "currentWinStreak": 2,
-      "longestWinStreak": 2
+      "gamesPlayed": 8,
+      "gamesWon": 8,
+      "roundsPlayed": 80,
+      "goingOutCount": 66,
+      "totalScore": 1050,
+      "currentWinStreak": 8,
+      "longestWinStreak": 8
     },
     "bestGameScores": [
+      {
+        "gameId": "game-Y7M3XM-1770842016383",
+        "date": "2026-02-11T20:33:36.383Z",
+        "score": 0,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-QTTHYG-1770846620066",
+        "date": "2026-02-11T21:50:20.066Z",
+        "score": 0,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-FICHQW-1770854343212",
+        "date": "2026-02-11T23:59:03.213Z",
+        "score": 95,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 100,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-U02NHD-1770834309162",
+        "date": "2026-02-11T18:25:09.163Z",
+        "score": 105,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-L9P9LX-1770877263464",
+        "date": "2026-02-12T06:21:03.464Z",
+        "score": 155,
+        "playerCount": 0,
+        "placement": 1
+      },
       {
         "gameId": "game-QBXJJG-1770663839921",
         "date": "2026-02-09T19:03:59.922Z",
@@ -201,9 +315,111 @@
         "score": 250,
         "playerCount": 0,
         "placement": 1
+      },
+      {
+        "gameId": "game-L9P9LX-1770877263464",
+        "date": "2026-02-12T06:21:03.464Z",
+        "score": 155,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-U02NHD-1770834309162",
+        "date": "2026-02-11T18:25:09.163Z",
+        "score": 105,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "score": 100,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-FICHQW-1770854343212",
+        "date": "2026-02-11T23:59:03.213Z",
+        "score": 95,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-Y7M3XM-1770842016383",
+        "date": "2026-02-11T20:33:36.383Z",
+        "score": 0,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-QTTHYG-1770846620066",
+        "date": "2026-02-11T21:50:20.066Z",
+        "score": 0,
+        "playerCount": 0,
+        "placement": 1
       }
     ],
     "recentGames": [
+      {
+        "gameId": "game-L9P9LX-1770877263464",
+        "date": "2026-02-12T06:21:03.464Z",
+        "playerCount": 0,
+        "myScore": 155,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 7,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-FICHQW-1770854343212",
+        "date": "2026-02-11T23:59:03.213Z",
+        "playerCount": 0,
+        "myScore": 95,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 8,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-QTTHYG-1770846620066",
+        "date": "2026-02-11T21:50:20.066Z",
+        "playerCount": 0,
+        "myScore": 0,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 10,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-Y7M3XM-1770842016383",
+        "date": "2026-02-11T20:33:36.383Z",
+        "playerCount": 0,
+        "myScore": 0,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 10,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-U02NHD-1770834309162",
+        "date": "2026-02-11T18:25:09.163Z",
+        "playerCount": 0,
+        "myScore": 105,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 9,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-3OUK9Q-1770777925179",
+        "date": "2026-02-11T02:45:25.179Z",
+        "playerCount": 0,
+        "myScore": 100,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 9,
+        "roundsPlayed": 10
+      },
       {
         "gameId": "game-46WA2N-1770670966622",
         "date": "2026-02-09T21:02:46.623Z",

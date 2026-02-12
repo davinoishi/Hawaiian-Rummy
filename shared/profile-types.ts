@@ -211,3 +211,47 @@ export interface SavedMeld {
   type: 'set' | 'run';
   cards: SavedCard[];
 }
+
+// ===== AI STATS TRACKING =====
+
+/**
+ * Stats for a single round (aggregated across all AI players)
+ */
+export interface AIRoundStats {
+  roundsPlayed: number;           // Total AI player-rounds played
+  metRequirements: number;        // Times AI met meld requirements (put down)
+  wentOut: number;                // Times AI went out (won the round)
+}
+
+/**
+ * AI performance tracking by round number
+ */
+export interface AIPerformanceStats {
+  // Stats indexed by round number (0-9)
+  byRound: Record<number, AIRoundStats>;
+
+  // Totals
+  totalRoundsPlayed: number;
+  totalMetRequirements: number;
+  totalWentOut: number;
+
+  lastUpdated: string;            // ISO date string
+}
+
+/**
+ * Create empty AI stats
+ */
+export function createEmptyAIStats(): AIPerformanceStats {
+  const byRound: Record<number, AIRoundStats> = {};
+  for (let i = 0; i < 10; i++) {
+    byRound[i] = { roundsPlayed: 0, metRequirements: 0, wentOut: 0 };
+  }
+
+  return {
+    byRound,
+    totalRoundsPlayed: 0,
+    totalMetRequirements: 0,
+    totalWentOut: 0,
+    lastUpdated: new Date().toISOString()
+  };
+}

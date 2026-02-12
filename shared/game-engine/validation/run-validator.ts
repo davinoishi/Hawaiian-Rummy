@@ -97,10 +97,16 @@ export function getPossibleRunArrangements(cards: Card[]): WildcardArrangement[]
       if (endValue > ACE_HIGH_VALUE) continue; // Would go beyond Ace high
 
       // Check that the sequence doesn't wrap around
+      // Key insight: A full A-2-3-4-5-6-7-8-9-10-J-Q-K run IS valid (13 cards)
+      // What we want to prevent is partial runs that could be interpreted both ways
       const hasAce = nonWildCards.some(c => c.rank === 'A');
       if (hasAce) {
-        if (aceHigh && startValue <= 3) continue; // If Ace is high, can't have 2,3 at start
-        if (!aceHigh && endValue >= 13) continue; // If Ace is low, can't have K at end
+        // If using Ace as 14 (high), ensure low cards aren't in the sequence
+        // This prevents runs like 2-3-...-K-A being interpreted as Ace-high with 2,3 at start
+        if (aceHigh && startValue <= 3 && endValue < ACE_HIGH_VALUE) continue;
+        // If using Ace as 1 (low), ensure K isn't at the end UNLESS we have a full 13-card run
+        // A full run from A(1) to K(13) is valid: A-2-3-4-5-6-7-8-9-10-J-Q-K
+        if (!aceHigh && endValue >= 13 && startValue !== 1) continue;
       }
 
       // Build the sequence string

@@ -45,12 +45,10 @@ function SocketProvider({ children }: { children: ReactNode }) {
     initializeFromStorage();
   }, [initializeFromStorage]);
 
-  // Connect to server on mount (only when online)
+  // Connect to server on mount
   useEffect(() => {
-    if (isOnline) {
-      connect();
-    }
-  }, [connect, isOnline]);
+    connect();
+  }, [connect]);
 
   // Initialize audio on first user interaction
   useEffect(() => {
@@ -69,12 +67,20 @@ function SocketProvider({ children }: { children: ReactNode }) {
     };
   }, [initAudioContext]);
 
-  // In offline mode, allow the app to render without socket connection
+  // Show offline message if not connected to internet
   if (!isOnline) {
-    return <>{children}</>;
+    return (
+      <div className={`flex items-center justify-center min-h-screen ${isLight ? 'bg-emerald-100' : 'bg-gradient-to-br from-emerald-800 to-emerald-950'}`}>
+        <div className={`text-center ${isLight ? 'text-emerald-800' : 'text-white'} p-8`}>
+          <div className="text-6xl mb-4">📡</div>
+          <h2 className="text-2xl font-bold mb-2">No Internet Connection</h2>
+          <p className="text-lg opacity-80">Please check your connection and try again.</p>
+        </div>
+      </div>
+    );
   }
 
-  // Show loading while connecting (only when online)
+  // Show loading while connecting
   if (connectionStatus !== 'connected') {
     return (
       <div className={`flex items-center justify-center min-h-screen ${isLight ? 'bg-emerald-100' : 'bg-gradient-to-br from-emerald-800 to-emerald-950'}`}>

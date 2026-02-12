@@ -10,7 +10,7 @@ interface OnlineStatusIndicatorProps {
 }
 
 export function OnlineStatusIndicator({ showOnline = false }: OnlineStatusIndicatorProps) {
-  const { isOnline, isForceOffline } = useOnlineStatus();
+  const { isOnline } = useOnlineStatus();
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const isLight = resolvedTheme === 'light';
 
@@ -18,9 +18,6 @@ export function OnlineStatusIndicator({ showOnline = false }: OnlineStatusIndica
   if (isOnline && !showOnline) {
     return null;
   }
-
-  // Determine the label based on why we're offline
-  const label = isForceOffline ? 'Offline Mode (Test)' : 'Offline Mode';
 
   return (
     <div
@@ -42,7 +39,7 @@ export function OnlineStatusIndicator({ showOnline = false }: OnlineStatusIndica
           isOnline ? 'bg-green-500 animate-pulse' : 'bg-amber-500'
         }`}
       />
-      {isOnline ? 'Online' : label}
+      {isOnline ? 'Online' : 'Offline'}
     </div>
   );
 }

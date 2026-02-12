@@ -10,6 +10,7 @@ import { useUIStore } from '../store/ui-store';
 import { useAudio } from './useAudio';
 import { useHaptics } from './useHaptics';
 import type { ClientGameState, ChatMessage } from '@shared/game-engine/types';
+import { recordAIRoundStats } from '../services/ai-stats';
 
 interface LobbyUpdate {
   roomId: string;
@@ -148,9 +149,10 @@ export function useSocketEvents() {
 
     // Game state events
     const handleGameState = (state: ClientGameState) => {
-      console.log('[CLIENT] gameState received, phase:', state.gamePhase);
       const previousState = useGameStore.getState();
       const wasMyTurn = previousState.isMyTurn;
+      const previousPhase = previousState.gamePhase;
+      console.log('[CLIENT] gameState received, phase:', state.gamePhase, 'previousPhase:', previousPhase, 'round:', state.currentRound);
 
       callbacks.updateGameState(state);
 
@@ -160,14 +162,43 @@ export function useSocketEvents() {
         hapticsRef.current.turnStart();
       }
 
-      // Handle round end
-      if (state.gamePhase === 'roundSummary') {
+      // Handle round end - record AI stats
+      if (state.gamePhase === 'roundSummary' && previousPhase !== 'roundSummary') {
         audioRef.current.playRoundEnd();
         hapticsRef.current.roundEnd();
+
+        // Record AI stats for this round
+        const aiPlayers = state.players.filter(p => p.isAI);
+        if (aiPlayers.length > 0) {
+          const aiResults = aiPlayers.map(p => ({
+            metRequirements: p.hasMetRequirements,
+            wentOut: p.handSize === 0
+          }));
+          console.log('[CLIENT] Recording AI stats for round', state.currentRound, ':', aiResults);
+          recordAIRoundStats(state.currentRound, aiResults);
+        }
       }
 
       // Handle game over
       if (state.gamePhase === 'gameOver') {
+        console.log('[CLIENT] gameOver detected - previousPhase:', previousPhase);
+
+        // Record AI stats for final round if coming from playing phase (not roundSummary)
+        if (previousPhase !== 'gameOver' && previousPhase !== 'roundSummary') {
+          const aiPlayers = state.players.filter(p => p.isAI);
+          console.log('[CLIENT] AI players found:', aiPlayers.length);
+          if (aiPlayers.length > 0) {
+            const aiResults = aiPlayers.map(p => ({
+              metRequirements: p.hasMetRequirements,
+              wentOut: p.handSize === 0
+            }));
+            console.log('[CLIENT] Recording AI stats for final round', state.currentRound, ':', aiResults);
+            recordAIRoundStats(state.currentRound, aiResults);
+          }
+        } else {
+          console.log('[CLIENT] Skipping AI stats - previousPhase was:', previousPhase);
+        }
+
         // Clear game session when game ends
         callbacks.clearGameSession();
         callbacks.clearDisconnectedPlayers();

@@ -8,5 +8,4 @@ export { useAudio } from './useAudio';
 export { useHaptics } from './useHaptics';
 export { useSocketEvents } from './useSocketEvents';
 export { useKeyboardShortcuts } from './useKeyboardShortcuts';
-export { useOnlineStatus, shouldUseOfflineMode } from './useOnlineStatus';
-export { useLocalGame } from './useLocalGame';
+export { useOnlineStatus } from './useOnlineStatus';

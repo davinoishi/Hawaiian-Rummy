@@ -5,7 +5,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSettingsStore } from '../../store';
 import { getDashboard } from '../../services/profile-api';
-import type { ServerDashboard } from '@shared/profile-types';
+import { getAIStats, calculateAISuccessRates, resetAIStats } from '../../services/ai-stats';
+import type { ServerDashboard, AIPerformanceStats } from '@shared/profile-types';
+import { ROUND_REQUIREMENTS } from '@shared/game-engine/constants';
 
 interface DashboardPageProps {
   onBack: () => void;
@@ -31,6 +33,7 @@ export function DashboardPage({ onBack }: DashboardPageProps) {
   const [dashboard, setDashboard] = useState<ServerDashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiStats, setAIStats] = useState<AIPerformanceStats | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -45,11 +48,23 @@ export function DashboardPage({ onBack }: DashboardPageProps) {
     } catch {
       setError('Failed to load dashboard');
     }
+    // Always load AI stats (from localStorage)
+    setAIStats(getAIStats());
     setLoading(false);
   }, []);
 
+  const handleResetAIStats = () => {
+    if (confirm('Are you sure you want to reset AI statistics?')) {
+      resetAIStats();
+      setAIStats(getAIStats());
+    }
+  };
+
   useEffect(() => {
     loadDashboard();
+
+    // Load AI stats immediately (doesn't depend on server)
+    setAIStats(getAIStats());
 
     // Auto-refresh every 30 seconds
     const interval = setInterval(loadDashboard, 30000);
@@ -239,6 +254,106 @@ export function DashboardPage({ onBack }: DashboardPageProps) {
               <p className={`text-sm text-center ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
                 Server started: {new Date(dashboard.startedAt).toLocaleString()}
               </p>
+            </div>
+          </>
+        )}
+
+        {/* AI Performance Stats (from localStorage) */}
+        {aiStats && (
+          <>
+            <div className={`panel p-4 ${isLight ? 'bg-white/90' : 'bg-emerald-800/90'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className={`text-lg font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                  AI Performance
+                </h2>
+                <button
+                  onClick={handleResetAIStats}
+                  className={`text-xs px-2 py-1 rounded ${isLight ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-red-900/50 text-red-300 hover:bg-red-800/50'}`}
+                >
+                  Reset
+                </button>
+              </div>
+
+              {aiStats.totalRoundsPlayed === 0 ? (
+                <p className={`text-center py-4 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
+                  No AI rounds played yet. Play a local game against AI to see performance stats.
+                </p>
+              ) : (
+              <>
+              {/* Overall Stats */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                    {aiStats.totalRoundsPlayed}
+                  </div>
+                  <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+                    AI Rounds
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                    {calculateAISuccessRates(aiStats).overall.metRequirementsRate.toFixed(1)}%
+                  </div>
+                  <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+                    Put Down Rate
+                  </div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                    {calculateAISuccessRates(aiStats).overall.wentOutRate.toFixed(1)}%
+                  </div>
+                  <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+                    Won Round Rate
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-Round Stats Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className={isLight ? 'text-emerald-700' : 'text-emerald-300'}>
+                      <th className="text-left py-1 px-2">Round</th>
+                      <th className="text-left py-1 px-2">Requirement</th>
+                      <th className="text-center py-1 px-2">Played</th>
+                      <th className="text-center py-1 px-2">Put Down</th>
+                      <th className="text-center py-1 px-2">Won</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 10 }, (_, i) => {
+                      const roundStats = aiStats.byRound[i];
+                      const rates = calculateAISuccessRates(aiStats).byRound[i];
+                      const req = ROUND_REQUIREMENTS[i];
+                      return (
+                        <tr key={i} className={`border-t ${isLight ? 'border-emerald-200' : 'border-emerald-700'}`}>
+                          <td className={`py-1 px-2 font-medium ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                            {i + 1}
+                          </td>
+                          <td className={`py-1 px-2 text-xs ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}>
+                            {req?.description || ''}
+                          </td>
+                          <td className={`py-1 px-2 text-center ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                            {roundStats?.roundsPlayed || 0}
+                          </td>
+                          <td className={`py-1 px-2 text-center ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                            {rates?.roundsPlayed > 0 ? `${rates.metRequirementsRate.toFixed(0)}%` : '-'}
+                          </td>
+                          <td className={`py-1 px-2 text-center ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                            {rates?.roundsPlayed > 0 ? `${rates.wentOutRate.toFixed(0)}%` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className={`text-xs mt-4 text-center ${isLight ? 'text-emerald-500' : 'text-emerald-500'}`}>
+                Last updated: {new Date(aiStats.lastUpdated).toLocaleString()}
+              </p>
+              </>
+              )}
             </div>
           </>
         )}

@@ -114,6 +114,16 @@ const io = new Server(server, {
 // ===== AI MANAGER =====
 const aiManager = new AIManager(gameManager, io);
 
+// Fisher-Yates shuffle for random AI selection
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 // AI spawning function
 function spawnAIPlayers(roomId: string, maxAI?: number) {
   const state = gameManager.getGameState(roomId);
@@ -129,8 +139,11 @@ function spawnAIPlayers(roomId: string, maxAI?: number) {
 
   console.log(`[Room ${roomId}] Spawning ${aiNeeded} AI player(s)...`);
 
-  for (let i = 0; i < aiNeeded && i < AI_NAMES.length; i++) {
-    const aiName = AI_NAMES[i];
+  // Shuffle AI names to randomly select which AIs play
+  const shuffledNames = shuffleArray(AI_NAMES);
+
+  for (let i = 0; i < aiNeeded && i < shuffledNames.length; i++) {
+    const aiName = shuffledNames[i];
     const aiId = `ai-${roomId}-${i}`;
 
     if (gameManager.addAIPlayer(roomId, aiId, aiName)) {

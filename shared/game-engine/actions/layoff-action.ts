@@ -132,12 +132,16 @@ export function canLayoffCard(
     }
 
     if (validPositions.length > 1) {
+      // Multiple positions: user needs to choose
       return {
         valid: true,
         needsWildcardPosition: true,
         validPositions
       };
     }
+
+    // Single valid position: return it so processLayoffCard knows where to put the wildcard
+    return { valid: true, validPositions };
   }
 
   return { valid: true };
