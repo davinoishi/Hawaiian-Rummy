@@ -449,7 +449,7 @@ export class ProfileManager {
     const byGoingOut = [...profiles].sort((a, b) => b.stats.goingOutCount - a.stats.goingOutCount);
     const mostGoingOut = createEntries(byGoingOut, p => p.stats.goingOutCount);
 
-    // Lowest single game score
+    // Lowest single game score (top 10 best games across all players)
     const allBestScores: (GameScoreRecord & { profile: PlayerProfile })[] = [];
     for (const profile of profiles) {
       for (const score of profile.bestGameScores) {
@@ -466,7 +466,7 @@ export class ProfileManager {
       date: s.date
     }));
 
-    // Highest single game score (wall of shame)
+    // Highest single game score (top 10 worst games across all players)
     const allWorstScores: (GameScoreRecord & { profile: PlayerProfile })[] = [];
     for (const profile of profiles) {
       for (const score of profile.worstGameScores) {

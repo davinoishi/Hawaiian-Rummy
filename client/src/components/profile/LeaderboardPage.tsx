@@ -130,10 +130,11 @@ export function LeaderboardPage({ onBack, currentProfileId }: LeaderboardPagePro
                 const isCurrentUser = currentProfileId && entry.profileId === currentProfileId;
                 const rank = index + 1;
                 const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+                const showDate = (activeCategory === 'lowestScore' || activeCategory === 'highestScore') && entry.date;
 
                 return (
                   <div
-                    key={entry.profileId}
+                    key={`${activeCategory}-${index}`}
                     className={`flex items-center justify-between p-3 rounded-lg ${
                       isCurrentUser
                         ? (isLight ? 'bg-emerald-200 border-2 border-emerald-400' : 'bg-emerald-600 border-2 border-emerald-400')
@@ -144,10 +145,17 @@ export function LeaderboardPage({ onBack, currentProfileId }: LeaderboardPagePro
                       <span className={`w-8 text-center font-bold ${isLight ? 'text-emerald-800' : 'text-emerald-200'}`}>
                         {medal || `${rank}.`}
                       </span>
-                      <span className={`font-medium ${isLight ? 'text-emerald-900' : 'text-white'}`}>
-                        {entry.nickname}
-                        {isCurrentUser && <span className="ml-2 text-xs opacity-60">(You)</span>}
-                      </span>
+                      <div>
+                        <span className={`font-medium ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                          {entry.nickname}
+                          {isCurrentUser && <span className="ml-2 text-xs opacity-60">(You)</span>}
+                        </span>
+                        {showDate && (
+                          <div className={`text-xs ${isLight ? 'text-emerald-500' : 'text-emerald-400'}`}>
+                            {new Date(entry.date!).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <span className={`font-bold ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
                       {formatValue(entry)}
