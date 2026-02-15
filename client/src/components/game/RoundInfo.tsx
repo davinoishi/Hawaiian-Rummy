@@ -87,8 +87,8 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   }, [clearGameSession, reset, profileId, navigate]);
 
   const handleTournamentExit = useCallback(() => {
-    clearGameSession();
-    reset();
+    // Simply navigate to standings — game state stays intact in the store
+    // and AppPhaseWatcher allows staying on tournament pages
     if (tournament) {
       navigate(`/tournament/${tournament.id}/standings`);
     } else if (profileId) {
@@ -96,7 +96,7 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
     } else {
       navigate('/');
     }
-  }, [clearGameSession, reset, tournament, profileId, navigate]);
+  }, [tournament, profileId, navigate]);
 
   return (
     <div className="panel p-3 mb-4">

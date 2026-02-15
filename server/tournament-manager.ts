@@ -143,6 +143,11 @@ export class TournamentManager {
             return { ...t, activeGameState: gameState };
           }
         }
+        // Preserve pending restores that haven't been consumed yet
+        const pendingState = this.pendingGameRestores.get(t.id);
+        if (t.status === 'in-progress' && !t.activeRoomId && pendingState) {
+          return { ...t, activeGameState: pendingState };
+        }
         return t;
       });
       fs.writeFileSync(TOURNAMENTS_FILE, JSON.stringify(tournamentsArray, null, 2));

@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { Routes, Route, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useSocketStore, useGameStore, useUIStore, useSettingsStore, useProfileStore } from './store';
+import { useSocketStore, useGameStore, useUIStore, useSettingsStore, useProfileStore, useTournamentStore } from './store';
 import { useSocketEvents, useAudio, useKeyboardShortcuts, useOnlineStatus } from './hooks';
 
 // Screens
@@ -300,22 +300,22 @@ function GameApp() {
 // App phase watcher - redirects to game when app phase changes
 function AppPhaseWatcher({ children }: { children: ReactNode }) {
   const appPhase = useGameStore((state) => state.appPhase);
+  const isInTournament = useTournamentStore((state) => state.isInTournament);
   const navigate = useNavigate();
   const location = useLocation();
 
   // When game starts (phase changes from 'join'), redirect to game
-  // But don't redirect if user is on a tournament standings page during gameOver
+  // But allow staying on tournament pages when in a tournament
   useEffect(() => {
     if (appPhase !== 'join' && location.pathname !== '/') {
       const onTournamentPage = location.pathname.startsWith('/tournament');
-      const isGameOver = appPhase === 'gameOver';
 
-      // Allow staying on tournament pages when game is over (viewing standings)
-      if (onTournamentPage && isGameOver) return;
+      // Allow staying on tournament pages when in a tournament
+      if (onTournamentPage && isInTournament) return;
 
       navigate('/');
     }
-  }, [appPhase, navigate, location.pathname]);
+  }, [appPhase, navigate, location.pathname, isInTournament]);
 
   return <>{children}</>;
 }

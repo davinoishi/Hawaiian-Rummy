@@ -3,8 +3,9 @@
  * Shows cumulative scores, per-game results, and continue button
  */
 
-import { useState, useCallback } from 'react';
-import { useSettingsStore, useSocketStore } from '../../store';
+import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useSettingsStore, useSocketStore, useGameStore } from '../../store';
 import { useTournamentStore } from '../../store/tournament-store';
 import type { MarathonProgress, MarathonGameResult } from '@shared/tournament-types';
 
@@ -18,9 +19,18 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
   const isLight = resolvedTheme === 'light';
   const emit = useSocketStore((state) => state.emit);
   const tournament = useTournamentStore((state) => state.tournament);
+  const appPhase = useGameStore((state) => state.appPhase);
+  const navigate = useNavigate();
 
   const [expandedGame, setExpandedGame] = useState<number | null>(null);
   const [hasContinued, setHasContinued] = useState(false);
+
+  // Auto-navigate to game when it starts after clicking Continue
+  useEffect(() => {
+    if (hasContinued && (appPhase === 'playing' || appPhase === 'turnOrder')) {
+      navigate('/');
+    }
+  }, [hasContinued, appPhase, navigate]);
 
   const handleContinue = useCallback(() => {
     if (!tournament) return;
@@ -39,6 +49,9 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
   const progress = tournament.progress as MarathonProgress;
   const isCompleted = tournament.status === 'completed';
   const { standings } = tournament;
+
+  // A game is in progress if currentGameNumber > completed games count
+  const gameInProgress = progress.currentGameNumber > progress.completedGames.length;
 
   return (
     <div className={`min-h-screen p-4 ${isLight ? 'bg-gradient-to-br from-emerald-100 to-emerald-50' : 'bg-gradient-to-br from-emerald-800 to-emerald-950'}`}>
@@ -189,6 +202,13 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
             <div className={`flex-1 text-center py-3 rounded-lg font-medium ${isLight ? 'bg-green-100 text-green-800' : 'bg-green-900/50 text-green-200'}`}>
               Tournament Complete
             </div>
+          ) : gameInProgress ? (
+            <button
+              onClick={() => navigate('/')}
+              className="btn-primary flex-1"
+            >
+              Resume Game {progress.currentGameNumber}
+            </button>
           ) : (
             <button
               onClick={handleContinue}

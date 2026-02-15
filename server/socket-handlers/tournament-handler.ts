@@ -145,6 +145,52 @@ export function setupTournamentHandlers(socket: Socket, deps: TournamentHandlerD
         return;
       }
 
+      // Check if there's an active game room the user should rejoin
+      if (tournament.activeRoomId) {
+        const gameState = deps.gameManager.getGameState(tournament.activeRoomId);
+        if (gameState && gameState.gamePhase !== 'gameOver') {
+          const roomId = tournament.activeRoomId;
+
+          // Join socket to the game room
+          socket.join(roomId);
+
+          // Update socket ID in the game room (user may have a new socket)
+          const oldSocketId = gameState.players.find(pid => {
+            const pId = deps.gameManager.getPlayerProfileId(roomId, pid);
+            return pId === data.profileId;
+          });
+
+          if (oldSocketId && oldSocketId !== socket.id) {
+            deps.gameManager.updatePlayerSocketId(roomId, oldSocketId, socket.id);
+          }
+
+          // Set socket data for the game room
+          setSocketData({ roomId, playerName: participant.nickname, profileId: data.profileId });
+
+          // Store profileId mapping in game room
+          const gameRoom = deps.gameManager.getRoom(roomId);
+          if (gameRoom) {
+            gameRoom.playerProfileIds.set(socket.id, data.profileId);
+          }
+
+          // Send tournament state first
+          const tState = tournamentManager.getClientTournamentState(tournament.id);
+          if (callback) {
+            callback({ success: true, tournament: tState });
+          }
+
+          // Then send game state to resume the game
+          socket.emit('tournamentGameStarting', { roomId });
+          const clientGameState = deps.gameManager.getClientGameState(roomId, socket.id);
+          if (clientGameState) {
+            socket.emit('gameState', clientGameState);
+          }
+
+          console.log(`[TournamentHandler] Reconnected ${data.profileId} to active game room ${roomId}`);
+          return;
+        }
+      }
+
       const state = tournamentManager.getClientTournamentState(tournament.id);
       if (callback) {
         callback({ success: true, tournament: state });
