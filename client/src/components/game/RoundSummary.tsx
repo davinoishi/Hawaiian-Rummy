@@ -30,9 +30,13 @@ export function RoundSummary() {
           Round {(currentRound || 0) + 1} Complete!
         </h2>
 
-        {roundWinner && (
+        {roundWinner ? (
           <p className="text-center text-yellow-400 mb-6">
             {roundWinner.isMe ? 'You went out!' : `${roundWinner.name} went out!`}
+          </p>
+        ) : (
+          <p className="text-center text-red-400 mb-6">
+            Deck exhausted! No winner this round — all hands scored.
           </p>
         )}
 

@@ -693,8 +693,13 @@ export function setupRoomHandlers(socket: Socket, deps: RoomHandlerDeps) {
     }
   });
 
-  // Return socket data getter for other handlers
+  // Return socket data getter and setter for other handlers
   return {
-    getSocketData: () => socketData
+    getSocketData: () => socketData,
+    setSocketData: (data: Partial<SocketData>) => {
+      if (data.roomId !== undefined) socketData.roomId = data.roomId;
+      if (data.playerName !== undefined) socketData.playerName = data.playerName;
+      if (data.profileId !== undefined) socketData.profileId = data.profileId;
+    }
   };
 }

@@ -66,14 +66,14 @@ npm install
 npm start
 ```
 
-Server will run on http://localhost:3000
+Server will run on http://localhost:3001
 
 For development with auto-reload:
 ```bash
 npm run dev
 ```
 
-All players need to be on the same LAN and access the game via http://<IP_address_of_host>:3000
+All players need to be on the same LAN and access the game via http://<IP_address_of_host>:3001
 
 ## Setup using noBGP (uses LLM to install and deploy the game)
 
@@ -102,7 +102,7 @@ Requirements: a Linux machine to install noBGP agent (this will also be the host
 
 ## How to Play
 
-1. In your browser, open http://localhost:3000 for LAN-only play or your noBGP URL for remote play
+1. In your browser, open http://localhost:3001 for LAN-only play or your noBGP URL for remote play
 2. Enter your name
 3. **Create a new room** or **Join an existing room** by entering a room ID
 4. Share the room ID with friends so they can join your game
@@ -112,7 +112,7 @@ Requirements: a Linux machine to install noBGP agent (this will also be the host
    - Draw from the deck or take the discard pile
    - Create sets and runs to meet round requirements
    - Layoff cards to any player's melds
-   - A round ends when one player has no cards remaining
+   - A round ends when one player has no cards remaining, or when the draw deck runs out (all hands scored, no winner)
 
 ## Game Flow
 
@@ -124,7 +124,7 @@ Requirements: a Linux machine to install noBGP agent (this will also be the host
 - Turn indicator shows whose turn it is
 - Current player can draw, meld, layoff, and discard
 - Other players wait and can see all melds. Players are allowed to place their cards on other players' melds as long as they have completed the round requirements themselves
-- Round ends when a player has no cards remaining in their hand
+- Round ends when a player has no cards remaining in their hand, or when the draw deck is exhausted (no winner, all hands scored)
 - Scores calculated, and the next round begins
 - Game ends after 10 rounds
 
@@ -184,17 +184,19 @@ hawaiian-rummy/
 ## NPM Scripts
 
 ```bash
-npm start          # Start production server
-npm run dev        # Start development server with auto-reload
-npm run build      # Build server TypeScript
-npm run client:dev # Start Vite dev server for client
-npm run client:build # Build client for production
+npm start            # Start production server
+npm run dev          # Start development server with auto-reload
+npm run build        # Build server TypeScript
+npm run client:dev   # Start Vite dev server for client development
+npm run client:build # Build client and output to client/dist
 ```
+
+**Note:** The server serves a pre-built client from the `public/` directory, so `npm run dev` (or `npm start`) is all you need to play the game at http://localhost:3001. The `client:dev` script starts a separate Vite dev server (port 5173) with hot-reload, which is only needed when actively developing the React UI in `client/src/`. After making client changes, run `npm run client:build` and copy the output from `client/dist/` to `public/` to update the production build.
 
 ## Testing Locally
 
 To test with multiple players:
-1. Open multiple browser windows/tabs to http://localhost:3000
+1. Open multiple browser windows/tabs to http://localhost:3001
 2. Each tab can create a new room or join the same room
 3. Multiple independent games can run simultaneously in different rooms
 

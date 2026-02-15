@@ -18,6 +18,12 @@ import { GameOverScreen } from './components/game/GameOverScreen';
 // Profile components
 import { ProfilePage, LeaderboardPage, CreateProfileModal, DashboardPage } from './components/profile';
 
+// Tournament components
+import { TournamentLobby, MarathonTracker } from './components/tournament';
+
+// Info pages
+import { AboutPage, PrivacyTermsPage } from './components/info';
+
 // Global components
 import { ErrorNotification } from './components/ui/ErrorNotification';
 import { BuyNotification } from './components/ui/BuyNotification';
@@ -139,6 +145,52 @@ function DashboardRoute() {
   );
 }
 
+// About route component
+function AboutRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <AboutPage
+      onBack={() => navigate('/')}
+      onViewPrivacy={() => navigate('/privacy')}
+    />
+  );
+}
+
+// Privacy/Terms route component
+function PrivacyTermsRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <PrivacyTermsPage
+      onBack={() => navigate('/')}
+    />
+  );
+}
+
+// Tournament lobby route component
+function TournamentLobbyRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <TournamentLobby
+      onBack={() => navigate('/')}
+    />
+  );
+}
+
+// Marathon tracker route component
+function MarathonTrackerRoute() {
+  const navigate = useNavigate();
+
+  return (
+    <MarathonTracker
+      onBack={() => navigate('/')}
+      onContinue={() => {}}
+    />
+  );
+}
+
 // Main game component
 function GameApp() {
   const appPhase = useGameStore((state) => state.appPhase);
@@ -190,6 +242,7 @@ function GameApp() {
             onViewProfile={profileId ? () => navigate(`/p/${profileId}`) : undefined}
             onViewLeaderboard={() => navigate('/leaderboard')}
             onCreateProfile={() => setShowCreateProfile(true)}
+            onViewAbout={() => navigate('/about')}
           />
         );
       case 'lobby':
@@ -208,6 +261,7 @@ function GameApp() {
             onViewProfile={profileId ? () => navigate(`/p/${profileId}`) : undefined}
             onViewLeaderboard={() => navigate('/leaderboard')}
             onCreateProfile={() => setShowCreateProfile(true)}
+            onViewAbout={() => navigate('/about')}
           />
         );
     }
@@ -250,8 +304,15 @@ function AppPhaseWatcher({ children }: { children: ReactNode }) {
   const location = useLocation();
 
   // When game starts (phase changes from 'join'), redirect to game
+  // But don't redirect if user is on a tournament standings page during gameOver
   useEffect(() => {
     if (appPhase !== 'join' && location.pathname !== '/') {
+      const onTournamentPage = location.pathname.startsWith('/tournament');
+      const isGameOver = appPhase === 'gameOver';
+
+      // Allow staying on tournament pages when game is over (viewing standings)
+      if (onTournamentPage && isGameOver) return;
+
       navigate('/');
     }
   }, [appPhase, navigate, location.pathname]);
@@ -267,6 +328,10 @@ export default function App() {
           <Route path="/p/:id" element={<ProfileRoute />} />
           <Route path="/leaderboard" element={<LeaderboardRoute />} />
           <Route path="/dashboard" element={<DashboardRoute />} />
+          <Route path="/about" element={<AboutRoute />} />
+          <Route path="/privacy" element={<PrivacyTermsRoute />} />
+          <Route path="/tournament/:id" element={<TournamentLobbyRoute />} />
+          <Route path="/tournament/:id/standings" element={<MarathonTrackerRoute />} />
           <Route path="*" element={<GameApp />} />
         </Routes>
       </AppPhaseWatcher>

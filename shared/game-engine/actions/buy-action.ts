@@ -260,13 +260,16 @@ export function processBuyRequests(state: GameState): { newState: GameState; sid
   const discardCard = state.discardPile[state.discardPile.length - 1];
   const newDiscardPile = state.discardPile.slice(0, -1);
 
-  // Draw a penalty card from deck
-  const [penaltyCard, remainingDeck] = drawCard(state.deck);
-
-  // Add both cards to buyer's hand
+  // Draw a penalty card from deck (if deck has cards)
   const newHand = [...buyingPlayerState.hand, discardCard];
-  if (penaltyCard) {
-    newHand.push(penaltyCard);
+  let remainingDeck = state.deck;
+
+  if (state.deck.length > 0) {
+    const [penaltyCard, deckAfterPenalty] = drawCard(state.deck);
+    remainingDeck = deckAfterPenalty;
+    if (penaltyCard) {
+      newHand.push(penaltyCard);
+    }
   }
 
   // Update state
@@ -287,12 +290,16 @@ export function processBuyRequests(state: GameState): { newState: GameState; sid
     }
   };
 
-  return {
-    newState,
-    sideEffects: [{
-      type: 'BUY_PROCESSED',
-      buyerId: buyingPlayerId,
-      cardId: discardCard.id
-    }]
-  };
+  const sideEffects: ActionSideEffect[] = [{
+    type: 'BUY_PROCESSED',
+    buyerId: buyingPlayerId,
+    cardId: discardCard.id
+  }];
+
+  // Check if deck is now exhausted
+  if (remainingDeck.length === 0) {
+    sideEffects.push({ type: 'ROUND_ENDED', winnerId: null });
+  }
+
+  return { newState, sideEffects };
 }

@@ -21,6 +21,7 @@ import {
   ContinueToNextRoundAction
 } from '../../shared/game-engine/types';
 import { AI_DECISION_DELAY } from '../../shared/game-engine/constants';
+import type { TournamentManager } from '../tournament-manager.js';
 
 /**
  * AI Player data
@@ -42,6 +43,7 @@ export class AIManager {
   private io: Server;
   private defaultStrategy: AIStrategy;
   private processingTurn: Set<string> = new Set(); // Track which AIs are processing
+  private tournamentManager: TournamentManager | null = null;
 
   constructor(gameManager: GameManager, io: Server) {
     this.gameManager = gameManager;
@@ -50,6 +52,13 @@ export class AIManager {
 
     // Start the AI turn processor
     this.startAIProcessor();
+  }
+
+  /**
+   * Set tournament manager reference for persisting game state after AI actions
+   */
+  setTournamentManager(tm: TournamentManager): void {
+    this.tournamentManager = tm;
   }
 
   /**
@@ -356,7 +365,19 @@ export class AIManager {
             wildcardPosition: layoff.wildcardPosition
           };
 
-          const result = this.executeAction(ai.roomId, action);
+          let result = this.executeAction(ai.roomId, action);
+
+          // If wildcard position needed, retry with first valid position
+          if (!result.success && result.sideEffects?.some(e => e.type === 'NEEDS_WILDCARD_POSITION')) {
+            console.log(`[AI] ${ai.name} layoff needs wildcard position, picking first option`);
+            const positionEffect = result.sideEffects?.find(e => e.type === 'NEEDS_WILDCARD_POSITION');
+            const firstPosition = positionEffect?.arrangements?.[0]?.sequence as 'beginning' | 'end' | undefined;
+            const retryAction: LayoffCardAction = {
+              ...action,
+              wildcardPosition: firstPosition || 'end'
+            };
+            result = this.executeAction(ai.roomId, retryAction);
+          }
 
           if (result.success) {
             // Check updated hand size
@@ -524,15 +545,61 @@ export class AIManager {
    * Execute an action and broadcast state
    */
   private executeAction(roomId: string, action: GameAction): { success: boolean; error?: string; sideEffects?: any[] } {
+    // Capture buy requests before processing (they get cleared during buy resolution)
+    const preState = this.gameManager.getGameState(roomId);
+    const preBuyRequests = preState?.buyRequests?.map(r => r.playerId) || [];
+
     const result = this.gameManager.processAction(roomId, action);
 
     if (result.success) {
+      // Notify human players about AI buy results
+      if (result.sideEffects) {
+        for (const effect of result.sideEffects) {
+          if (effect.type === 'BUY_PROCESSED') {
+            this.notifyBuyResult(roomId, effect.buyerId, effect.cardId, preBuyRequests);
+          }
+        }
+      }
       this.broadcastGameState(roomId);
     } else {
       console.log(`[AI] Action failed: ${result.error}`);
     }
 
     return { success: result.success, error: result.error, sideEffects: result.sideEffects };
+  }
+
+  /**
+   * Notify human players about a buy result from an AI action
+   */
+  private notifyBuyResult(roomId: string, buyerId: string, cardId: string, preBuyRequestPlayerIds: string[]): void {
+    const state = this.gameManager.getGameState(roomId);
+    if (!state) return;
+
+    const buyerName = state.playerNames[buyerId] || 'Unknown';
+    const playerState = state.playerStates[buyerId];
+    const boughtCard = playerState?.hand.find(c => c.id === cardId);
+    const cardDisplay = boughtCard ? `${boughtCard.rank}${boughtCard.suit}` : 'card';
+
+    state.players.forEach(playerId => {
+      if (this.isAI(playerId)) return;
+      if (playerId === buyerId) return;
+
+      const socket = this.io.sockets.sockets.get(playerId);
+      if (!socket) return;
+
+      const hadRequest = preBuyRequestPlayerIds.includes(playerId);
+      if (hadRequest) {
+        socket.emit('buyNotification', {
+          type: 'denied',
+          message: `\u2717 ${buyerName} won the buy (higher priority)`
+        });
+      } else {
+        socket.emit('buyNotification', {
+          type: 'info',
+          message: `${buyerName} bought ${cardDisplay}`
+        });
+      }
+    });
   }
 
   /**
@@ -554,6 +621,11 @@ export class AIManager {
         }
       }
     });
+
+    // Persist tournament game state after every AI action broadcast
+    if (this.tournamentManager) {
+      this.tournamentManager.saveIfTournamentGame(roomId);
+    }
   }
 
   /**

@@ -31,6 +31,10 @@ export function setupBuyHandlers(socket: Socket, deps: BuyHandlerDeps) {
     const { roomId, playerName } = getSocketData();
     if (!roomId) return;
 
+    // Capture buy requests before processing (they get cleared during resolution)
+    const preState = gameManager.getGameState(roomId);
+    const preBuyRequestPlayerIds = preState?.buyRequests?.map(r => r.playerId) || [];
+
     const action: RequestBuyAction = {
       type: 'REQUEST_BUY',
       playerId: socket.id
@@ -47,7 +51,7 @@ export function setupBuyHandlers(socket: Socket, deps: BuyHandlerDeps) {
     if (result.sideEffects) {
       for (const effect of result.sideEffects) {
         if (effect.type === 'BUY_PROCESSED') {
-          notifyBuyResult(io, gameManager, roomId, effect.buyerId, effect.cardId);
+          notifyBuyResult(io, gameManager, roomId, effect.buyerId, effect.cardId, preBuyRequestPlayerIds);
         }
       }
     }
@@ -81,6 +85,10 @@ export function setupBuyHandlers(socket: Socket, deps: BuyHandlerDeps) {
     const { roomId } = getSocketData();
     if (!roomId) return;
 
+    // Capture buy requests before processing (they get cleared during resolution)
+    const preState = gameManager.getGameState(roomId);
+    const preBuyRequestPlayerIds = preState?.buyRequests?.map(r => r.playerId) || [];
+
     const action: PassBuyAction = {
       type: 'PASS_BUY',
       playerId: socket.id
@@ -96,7 +104,7 @@ export function setupBuyHandlers(socket: Socket, deps: BuyHandlerDeps) {
     if (result.sideEffects) {
       for (const effect of result.sideEffects) {
         if (effect.type === 'BUY_PROCESSED') {
-          notifyBuyResult(io, gameManager, roomId, effect.buyerId, effect.cardId);
+          notifyBuyResult(io, gameManager, roomId, effect.buyerId, effect.cardId, preBuyRequestPlayerIds);
         }
       }
     }
@@ -113,7 +121,8 @@ function notifyBuyResult(
   gameManager: GameManager,
   roomId: string,
   buyerId: string,
-  cardId: string
+  cardId: string,
+  preBuyRequestPlayerIds: string[]
 ) {
   const state = gameManager.getGameState(roomId);
   if (!state) return;
@@ -136,8 +145,8 @@ function notifyBuyResult(
         message: `✓ You won the buy! (${cardDisplay})`
       });
     } else {
-      // Check if this player had requested a buy
-      const hadRequest = state.buyRequests.some(r => r.playerId === playerId);
+      // Use pre-processing buy requests (they're cleared during resolution)
+      const hadRequest = preBuyRequestPlayerIds.includes(playerId);
 
       if (hadRequest) {
         playerSocket.emit('buyNotification', {

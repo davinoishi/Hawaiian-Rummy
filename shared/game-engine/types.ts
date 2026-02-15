@@ -218,7 +218,7 @@ export interface ActionResult {
 }
 
 export type ActionSideEffect =
-  | { type: 'ROUND_ENDED'; winnerId: string }
+  | { type: 'ROUND_ENDED'; winnerId: string | null }
   | { type: 'GAME_ENDED'; winnerId: string }
   | { type: 'BUY_PROCESSED'; buyerId: string; cardId: string }
   | { type: 'REQUIREMENTS_MET'; playerId: string }

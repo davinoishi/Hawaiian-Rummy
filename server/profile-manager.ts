@@ -64,7 +64,9 @@ function createEmptyStats(): PlayerStats {
     goingOutCount: 0,
     totalScore: 0,
     currentWinStreak: 0,
-    longestWinStreak: 0
+    longestWinStreak: 0,
+    tournamentsEntered: 0,
+    tournamentsWon: 0
   };
 }
 
@@ -316,6 +318,24 @@ export class ProfileManager {
     this.saveCompletedGames();
 
     console.log(`Recorded completed game: ${gameId} with ${results.length} players`);
+  }
+
+  recordTournamentResult(participants: { profileId: string; isAI: boolean }[], winnerId?: string): void {
+    for (const p of participants) {
+      if (p.isAI) continue;
+      const profile = this.profiles.get(p.profileId);
+      if (!profile) continue;
+
+      // Initialize fields for older profiles that don't have them
+      if (profile.stats.tournamentsEntered === undefined) profile.stats.tournamentsEntered = 0;
+      if (profile.stats.tournamentsWon === undefined) profile.stats.tournamentsWon = 0;
+
+      profile.stats.tournamentsEntered++;
+      if (p.profileId === winnerId) {
+        profile.stats.tournamentsWon++;
+      }
+    }
+    this.saveProfiles();
   }
 
   private updateProfileStats(

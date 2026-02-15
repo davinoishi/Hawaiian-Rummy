@@ -2,14 +2,24 @@
  * GameOverScreen - Shows final game results
  */
 
+import { useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameStore, useUIStore, useSocketStore } from '../../store';
+import { useTournamentStore } from '../../store/tournament-store';
 import { useAudio } from '../../hooks';
 import { ChatPanel } from './ChatPanel';
+import type { MarathonProgress } from '@shared/tournament-types';
 
 export function GameOverScreen() {
   const { players, winner, isWinner, rematchVotes, hasVotedForRematch, roomId } = useGameStore();
   const emit = useSocketStore((state) => state.emit);
   const { playClick } = useAudio();
+  const navigate = useNavigate();
+
+  const tournament = useTournamentStore((state) => state.tournament);
+  const isInTournament = useTournamentStore((state) => state.isInTournament);
+
+  const [hasContinued, setHasContinued] = useState(false);
 
   // Sort players by score (lowest first for rummy)
   const sortedPlayers = [...(players || [])].sort((a, b) => a.score - b.score);
@@ -27,6 +37,25 @@ export function GameOverScreen() {
     useUIStore.getState().resetUI();
   };
 
+  const handleTournamentContinue = useCallback(() => {
+    if (!tournament) return;
+    playClick();
+    setHasContinued(true);
+    emit('continueTournament', tournament.id);
+  }, [tournament, emit, playClick]);
+
+  const handleViewStandings = useCallback(() => {
+    if (!tournament) return;
+    playClick();
+    navigate(`/tournament/${tournament.id}/standings`);
+  }, [tournament, playClick, navigate]);
+
+  // Tournament progress info
+  const progress = tournament?.progress as MarathonProgress | undefined;
+  const isTournamentComplete = tournament?.status === 'completed';
+  const gameNumber = progress?.currentGameNumber || 0;
+  const totalGames = progress?.totalGames || 10;
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="panel p-6 sm:p-8 w-full max-w-lg">
@@ -38,6 +67,13 @@ export function GameOverScreen() {
           {winner && (
             <p className="text-emerald-200">
               {isWinner ? 'Congratulations!' : `${winner.name} wins!`}
+            </p>
+          )}
+          {isInTournament && (
+            <p className="text-emerald-300 text-sm mt-2">
+              {isTournamentComplete
+                ? `${tournament?.name} - Tournament Complete`
+                : `${tournament?.name} - Game ${gameNumber} of ${totalGames}`}
             </p>
           )}
         </div>
@@ -102,33 +138,73 @@ export function GameOverScreen() {
 
         {/* Actions */}
         <div className="space-y-3">
-          {hasVotedForRematch ? (
-            <div className="text-center p-4 bg-emerald-700/30 rounded-lg">
-              <div className="flex items-center justify-center gap-2 text-emerald-200 mb-2">
-                <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                Waiting for others...
-              </div>
-              {rematchVotes && (
-                <div className="text-sm text-emerald-300">
-                  {rematchVotes.votedCount}/{rematchVotes.total} voted for rematch
+          {isInTournament ? (
+            // Tournament-specific actions
+            <>
+              {isTournamentComplete ? (
+                <button
+                  onClick={handleViewStandings}
+                  className="btn-primary w-full py-3 text-lg"
+                >
+                  View Final Standings
+                </button>
+              ) : hasContinued ? (
+                <div className="text-center p-4 bg-emerald-700/30 rounded-lg">
+                  <div className="flex items-center justify-center gap-2 text-emerald-200 mb-2">
+                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                    Waiting for others...
+                  </div>
+                  <div className="text-sm text-emerald-300">
+                    Next game will start when all players are ready
+                  </div>
                 </div>
+              ) : (
+                <button
+                  onClick={handleTournamentContinue}
+                  className="btn-primary w-full py-3 text-lg"
+                >
+                  Continue to Game {gameNumber + 1}
+                </button>
               )}
-            </div>
+              <button
+                onClick={handleViewStandings}
+                className="btn-ghost w-full py-2 text-emerald-200"
+              >
+                View Tournament Standings
+              </button>
+            </>
           ) : (
-            <button
-              onClick={handleRematch}
-              className="btn-primary w-full py-3 text-lg"
-            >
-              Rematch
-            </button>
-          )}
+            // Normal game actions
+            <>
+              {hasVotedForRematch ? (
+                <div className="text-center p-4 bg-emerald-700/30 rounded-lg">
+                  <div className="flex items-center justify-center gap-2 text-emerald-200 mb-2">
+                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                    Waiting for others...
+                  </div>
+                  {rematchVotes && (
+                    <div className="text-sm text-emerald-300">
+                      {rematchVotes.votedCount}/{rematchVotes.total} voted for rematch
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  onClick={handleRematch}
+                  className="btn-primary w-full py-3 text-lg"
+                >
+                  Rematch
+                </button>
+              )}
 
-          <button
-            onClick={handleLeave}
-            className="btn-ghost w-full py-2 text-emerald-200"
-          >
-            Leave Game
-          </button>
+              <button
+                onClick={handleLeave}
+                className="btn-ghost w-full py-2 text-emerald-200"
+              >
+                Leave Game
+              </button>
+            </>
+          )}
         </div>
       </div>
 

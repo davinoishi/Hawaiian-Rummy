@@ -1,0 +1,239 @@
+[
+  {
+    "id": "t-1770963482972-uiddu3",
+    "name": "6th try",
+    "type": "marathon",
+    "status": "in-progress",
+    "hostProfileId": "OT-6GUTu2rH2Zwks3RxuI",
+    "inviteCode": "RZG88Q",
+    "createdAt": "2026-02-13T06:18:02.972Z",
+    "lastActivityAt": "2026-02-15T00:30:10.778Z",
+    "participants": [
+      {
+        "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+        "nickname": "Davin",
+        "isAI": false,
+        "isHost": true,
+        "isConnected": true,
+        "joinedAt": "2026-02-13T06:18:02.972Z"
+      },
+      {
+        "profileId": "ai-tournament-Ewa Villages",
+        "nickname": "Ewa Villages",
+        "isAI": true,
+        "isHost": false,
+        "isConnected": true,
+        "joinedAt": "2026-02-13T06:18:04.922Z"
+      },
+      {
+        "profileId": "ai-tournament-Haleiwa",
+        "nickname": "Haleiwa",
+        "isAI": true,
+        "isHost": false,
+        "isConnected": true,
+        "joinedAt": "2026-02-13T06:18:04.922Z"
+      },
+      {
+        "profileId": "ai-tournament-Wailea",
+        "nickname": "Wailea",
+        "isAI": true,
+        "isHost": false,
+        "isConnected": true,
+        "joinedAt": "2026-02-13T06:18:04.922Z"
+      }
+    ],
+    "chatMessages": [],
+    "totalGames": 10,
+    "completedGames": [
+      {
+        "gameNumber": 1,
+        "completedAt": "2026-02-13T07:16:36.598Z",
+        "playerResults": [
+          {
+            "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+            "nickname": "Davin",
+            "isAI": false,
+            "finalScore": 10,
+            "placement": 1,
+            "won": true,
+            "goingOutCount": 8,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Wailea",
+            "nickname": "Wailea",
+            "isAI": true,
+            "finalScore": 1130,
+            "placement": 2,
+            "won": false,
+            "goingOutCount": 1,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Ewa Villages",
+            "nickname": "Ewa Villages",
+            "isAI": true,
+            "finalScore": 1145,
+            "placement": 3,
+            "won": false,
+            "goingOutCount": 0,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Haleiwa",
+            "nickname": "Haleiwa",
+            "isAI": true,
+            "finalScore": 1345,
+            "placement": 4,
+            "won": false,
+            "goingOutCount": 1,
+            "roundsPlayed": 10
+          }
+        ]
+      },
+      {
+        "gameNumber": 2,
+        "completedAt": "2026-02-13T23:26:05.089Z",
+        "playerResults": [
+          {
+            "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+            "nickname": "Davin",
+            "isAI": false,
+            "finalScore": 195,
+            "placement": 1,
+            "won": true,
+            "goingOutCount": 5,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Haleiwa",
+            "nickname": "Haleiwa",
+            "isAI": true,
+            "finalScore": 985,
+            "placement": 2,
+            "won": false,
+            "goingOutCount": 3,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Wailea",
+            "nickname": "Wailea",
+            "isAI": true,
+            "finalScore": 1095,
+            "placement": 3,
+            "won": false,
+            "goingOutCount": 0,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Ewa Villages",
+            "nickname": "Ewa Villages",
+            "isAI": true,
+            "finalScore": 1105,
+            "placement": 4,
+            "won": false,
+            "goingOutCount": 2,
+            "roundsPlayed": 10
+          }
+        ]
+      },
+      {
+        "gameNumber": 3,
+        "completedAt": "2026-02-14T01:31:48.651Z",
+        "playerResults": [
+          {
+            "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+            "nickname": "Davin",
+            "isAI": false,
+            "finalScore": 170,
+            "placement": 1,
+            "won": true,
+            "goingOutCount": 7,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Ewa Villages",
+            "nickname": "Ewa Villages",
+            "isAI": true,
+            "finalScore": 980,
+            "placement": 2,
+            "won": false,
+            "goingOutCount": 2,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Haleiwa",
+            "nickname": "Haleiwa",
+            "isAI": true,
+            "finalScore": 985,
+            "placement": 3,
+            "won": false,
+            "goingOutCount": 1,
+            "roundsPlayed": 10
+          },
+          {
+            "profileId": "ai-tournament-Wailea",
+            "nickname": "Wailea",
+            "isAI": true,
+            "finalScore": 990,
+            "placement": 4,
+            "won": false,
+            "goingOutCount": 0,
+            "roundsPlayed": 10
+          }
+        ]
+      }
+    ],
+    "currentGameNumber": 4,
+    "cumulativeScores": {
+      "OT-6GUTu2rH2Zwks3RxuI": 375,
+      "ai-tournament-Ewa Villages": 3230,
+      "ai-tournament-Haleiwa": 3315,
+      "ai-tournament-Wailea": 3215
+    },
+    "standings": [
+      {
+        "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+        "nickname": "Davin",
+        "isAI": false,
+        "rank": 1,
+        "cumulativeScore": 375,
+        "gamesPlayed": 3,
+        "gamesWon": 3,
+        "goingOutCount": 20
+      },
+      {
+        "profileId": "ai-tournament-Wailea",
+        "nickname": "Wailea",
+        "isAI": true,
+        "rank": 2,
+        "cumulativeScore": 3215,
+        "gamesPlayed": 3,
+        "gamesWon": 0,
+        "goingOutCount": 1
+      },
+      {
+        "profileId": "ai-tournament-Ewa Villages",
+        "nickname": "Ewa Villages",
+        "isAI": true,
+        "rank": 3,
+        "cumulativeScore": 3230,
+        "gamesPlayed": 3,
+        "gamesWon": 0,
+        "goingOutCount": 4
+      },
+      {
+        "profileId": "ai-tournament-Haleiwa",
+        "nickname": "Haleiwa",
+        "isAI": true,
+        "rank": 4,
+        "cumulativeScore": 3315,
+        "gamesPlayed": 3,
+        "gamesWon": 0,
+        "goingOutCount": 5
+      }
+    ],
+    "startedAt": "2026-02-13T06:18:04.922Z",
+    "activeRoomId": "S4EJNI"
+  }
+]

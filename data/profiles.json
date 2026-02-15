@@ -233,15 +233,15 @@
     "nickname": "Davin",
     "isAI": false,
     "createdAt": "2026-02-09T17:13:34.555Z",
-    "lastActiveAt": "2026-02-12T06:21:03.464Z",
+    "lastActiveAt": "2026-02-13T04:54:56.030Z",
     "stats": {
-      "gamesPlayed": 8,
-      "gamesWon": 8,
-      "roundsPlayed": 80,
-      "goingOutCount": 66,
-      "totalScore": 1050,
-      "currentWinStreak": 8,
-      "longestWinStreak": 8
+      "gamesPlayed": 11,
+      "gamesWon": 11,
+      "roundsPlayed": 110,
+      "goingOutCount": 83,
+      "totalScore": 1720,
+      "currentWinStreak": 11,
+      "longestWinStreak": 11
     },
     "bestGameScores": [
       {
@@ -287,6 +287,20 @@
         "placement": 1
       },
       {
+        "gameId": "game-OVZAR4-1770939635111",
+        "date": "2026-02-12T23:40:35.111Z",
+        "score": 200,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-IAZCWN-1770930032106",
+        "date": "2026-02-12T21:00:32.106Z",
+        "score": 205,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
         "gameId": "game-QBXJJG-1770663839921",
         "date": "2026-02-09T19:03:59.922Z",
         "score": 250,
@@ -294,9 +308,9 @@
         "placement": 1
       },
       {
-        "gameId": "game-46WA2N-1770670966622",
-        "date": "2026-02-09T21:02:46.623Z",
-        "score": 345,
+        "gameId": "game-DC8ZW0-1770917382404",
+        "date": "2026-02-12T17:29:42.404Z",
+        "score": 265,
         "playerCount": 0,
         "placement": 1
       }
@@ -310,9 +324,30 @@
         "placement": 1
       },
       {
+        "gameId": "game-DC8ZW0-1770917382404",
+        "date": "2026-02-12T17:29:42.404Z",
+        "score": 265,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
         "gameId": "game-QBXJJG-1770663839921",
         "date": "2026-02-09T19:03:59.922Z",
         "score": 250,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-IAZCWN-1770930032106",
+        "date": "2026-02-12T21:00:32.106Z",
+        "score": 205,
+        "playerCount": 0,
+        "placement": 1
+      },
+      {
+        "gameId": "game-OVZAR4-1770939635111",
+        "date": "2026-02-12T23:40:35.111Z",
+        "score": 200,
         "playerCount": 0,
         "placement": 1
       },
@@ -350,16 +385,39 @@
         "score": 0,
         "playerCount": 0,
         "placement": 1
-      },
-      {
-        "gameId": "game-QTTHYG-1770846620066",
-        "date": "2026-02-11T21:50:20.066Z",
-        "score": 0,
-        "playerCount": 0,
-        "placement": 1
       }
     ],
     "recentGames": [
+      {
+        "gameId": "game-OVZAR4-1770939635111",
+        "date": "2026-02-12T23:40:35.111Z",
+        "playerCount": 0,
+        "myScore": 200,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 5,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-IAZCWN-1770930032106",
+        "date": "2026-02-12T21:00:32.106Z",
+        "playerCount": 0,
+        "myScore": 205,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 6,
+        "roundsPlayed": 10
+      },
+      {
+        "gameId": "game-DC8ZW0-1770917382404",
+        "date": "2026-02-12T17:29:42.404Z",
+        "playerCount": 0,
+        "myScore": 265,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 6,
+        "roundsPlayed": 10
+      },
       {
         "gameId": "game-L9P9LX-1770877263464",
         "date": "2026-02-12T06:21:03.464Z",
@@ -441,5 +499,24 @@
         "roundsPlayed": 10
       }
     ]
+  },
+  {
+    "id": "dF1r499M6KuyZqObeKpGl",
+    "nickname": "YuumaChrome",
+    "isAI": false,
+    "createdAt": "2026-02-13T04:56:29.120Z",
+    "lastActiveAt": "2026-02-13T04:56:29.120Z",
+    "stats": {
+      "gamesPlayed": 0,
+      "gamesWon": 0,
+      "roundsPlayed": 0,
+      "goingOutCount": 0,
+      "totalScore": 0,
+      "currentWinStreak": 0,
+      "longestWinStreak": 0
+    },
+    "bestGameScores": [],
+    "worstGameScores": [],
+    "recentGames": []
   }
 ]

@@ -240,5 +240,59 @@
     ],
     "totalRounds": 10,
     "durationMinutes": 0
+  },
+  {
+    "id": "game-DC8ZW0-1770917382404",
+    "completedAt": "2026-02-12T17:29:42.404Z",
+    "players": [
+      {
+        "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+        "nickname": "Davin",
+        "isAI": false,
+        "finalScore": 265,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 6,
+        "roundsPlayed": 10
+      }
+    ],
+    "totalRounds": 10,
+    "durationMinutes": 0
+  },
+  {
+    "id": "game-IAZCWN-1770930032106",
+    "completedAt": "2026-02-12T21:00:32.106Z",
+    "players": [
+      {
+        "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+        "nickname": "Davin",
+        "isAI": false,
+        "finalScore": 205,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 6,
+        "roundsPlayed": 10
+      }
+    ],
+    "totalRounds": 10,
+    "durationMinutes": 0
+  },
+  {
+    "id": "game-OVZAR4-1770939635111",
+    "completedAt": "2026-02-12T23:40:35.111Z",
+    "players": [
+      {
+        "profileId": "OT-6GUTu2rH2Zwks3RxuI",
+        "nickname": "Davin",
+        "isAI": false,
+        "finalScore": 200,
+        "placement": 1,
+        "won": true,
+        "goingOutCount": 5,
+        "roundsPlayed": 10
+      }
+    ],
+    "totalRounds": 10,
+    "durationMinutes": 0
   }
 ]

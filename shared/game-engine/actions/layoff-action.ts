@@ -197,17 +197,9 @@ export function processLayoffCard(state: GameState, action: LayoffCardAction): A
   let newMeldCards: Card[];
 
   if (card.isWild && meld.type === 'run') {
-    // Place wildcard at specified position
+    // Add wildcard and re-sort the run to place it at its logical position
     const position = action.wildcardPosition || validation.validPositions?.[0] || 'end';
-    console.log(`[LAYOFF] Wildcard layoff: action.wildcardPosition=${action.wildcardPosition}, chosen position=${position}`);
-    console.log(`[LAYOFF] Meld before: [${meld.cards.map(c => `${c.rank}${c.suit}`).join(', ')}]`);
-
-    if (position === 'beginning') {
-      newMeldCards = [card, ...meld.cards];
-    } else {
-      newMeldCards = [...meld.cards, card];
-    }
-    console.log(`[LAYOFF] Meld after: [${newMeldCards.map(c => `${c.rank}${c.suit}`).join(', ')}]`);
+    newMeldCards = sortRunCards([...meld.cards, card], position);
   } else if (meld.type === 'run') {
     // Non-wildcard run layoff - sort properly
     newMeldCards = sortRunCards([...meld.cards, card]);

@@ -9,6 +9,14 @@ import { profileManager } from '../profile-manager.js';
 import { AI_NAMES } from '../../shared/game-engine/constants';
 import type { Card, Rank, Suit, GameState } from '../../shared/game-engine/types';
 import type { GamePlayerResult } from '../../shared/profile-types.js';
+import type { TournamentManager } from '../tournament-manager';
+
+// Module-level reference set by the main server setup
+let _tournamentManager: TournamentManager | null = null;
+
+export function setTournamentManager(tm: TournamentManager): void {
+  _tournamentManager = tm;
+}
 
 // Track which games have been recorded to avoid duplicates
 const recordedGames = new Set<string>();
@@ -133,7 +141,12 @@ export function broadcastGameState(
 
   // Record game completion when game ends
   if (state.gamePhase === 'gameOver' && !state.tutorialMode) {
-    recordGameCompletion(roomId, state, gameManager);
+    // Check if this is a tournament game
+    if (_tournamentManager?.isGameInTournament(roomId)) {
+      _tournamentManager.handleGameCompleted(roomId);
+    } else {
+      recordGameCompletion(roomId, state, gameManager);
+    }
   }
 
   state.players.forEach(playerId => {
@@ -147,6 +160,11 @@ export function broadcastGameState(
       }
     }
   });
+
+  // Persist tournament game state after every broadcast
+  if (_tournamentManager) {
+    _tournamentManager.saveIfTournamentGame(roomId);
+  }
 }
 
 /**

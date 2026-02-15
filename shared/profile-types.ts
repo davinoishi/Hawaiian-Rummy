@@ -16,6 +16,9 @@ export interface PlayerStats {
 
   currentWinStreak: number;
   longestWinStreak: number;
+
+  tournamentsEntered: number;
+  tournamentsWon: number;
 }
 
 export interface GameScoreRecord {

@@ -6,10 +6,12 @@
 import { Server, Socket } from 'socket.io';
 import { GameManager } from '../game-manager';
 import { AIManager } from '../ai/ai-manager';
+import { TournamentManager } from '../tournament-manager';
 import { setupRoomHandlers } from './room-handler';
 import { setupGameHandlers, createBroadcastFunction } from './game-handler';
 import { setupActionHandlers } from './action-handler';
 import { setupBuyHandlers } from './buy-handler';
+import { setupTournamentHandlers } from './tournament-handler';
 
 export interface SocketHandlersDeps {
   io: Server;
@@ -17,19 +19,20 @@ export interface SocketHandlersDeps {
   logAnalytics: (event: string, data?: any) => void;
   spawnAIPlayers?: (roomId: string, maxAI?: number) => void;
   aiManager?: AIManager;
+  tournamentManager?: TournamentManager;
 }
 
 /**
  * Set up all socket handlers for a connection
  */
 export function setupSocketHandlers(socket: Socket, deps: SocketHandlersDeps) {
-  const { io, gameManager, logAnalytics, spawnAIPlayers, aiManager } = deps;
+  const { io, gameManager, logAnalytics, spawnAIPlayers, aiManager, tournamentManager } = deps;
 
   // Create broadcast function
   const broadcastGameState = createBroadcastFunction(io, gameManager);
 
-  // Set up room handlers and get socket data getter
-  const { getSocketData } = setupRoomHandlers(socket, {
+  // Set up room handlers and get socket data getter/setter
+  const { getSocketData, setSocketData } = setupRoomHandlers(socket, {
     io,
     gameManager,
     logAnalytics,
@@ -61,6 +64,17 @@ export function setupSocketHandlers(socket: Socket, deps: SocketHandlersDeps) {
     getSocketData,
     broadcastGameState
   });
+
+  // Set up tournament handlers
+  if (tournamentManager) {
+    setupTournamentHandlers(socket, {
+      io,
+      gameManager,
+      tournamentManager,
+      getSocketData,
+      setSocketData
+    });
+  }
 }
 
 export { broadcastGameState, initializeTutorialGame } from './game-handler';

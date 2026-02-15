@@ -10,6 +10,8 @@ import { useUIStore } from '../store/ui-store';
 import { useAudio } from './useAudio';
 import { useHaptics } from './useHaptics';
 import type { ClientGameState, ChatMessage } from '@shared/game-engine/types';
+import type { ClientTournamentState, TournamentChatMessage, TournamentStanding } from '@shared/tournament-types';
+import { useTournamentStore } from '../store/tournament-store';
 import { recordAIRoundStats } from '../services/ai-stats';
 
 interface LobbyUpdate {
@@ -219,8 +221,10 @@ export function useSocketEvents() {
         audioRef.current.playBuyGranted();
         hapticsRef.current.buyGranted();
       } else if (data.type === 'denied') {
-        audioRef.current.playBuyDenied();
+        audioRef.current.playError();
         hapticsRef.current.buyDenied();
+      } else if (data.type === 'info') {
+        audioRef.current.playBuyRequest();
       }
 
       // Auto-clear notification
@@ -346,6 +350,39 @@ export function useSocketEvents() {
       useGameStore.getState().setAppPhase('lobby');
     };
 
+    // Tournament events
+    const handleTournamentState = (data: ClientTournamentState | null) => {
+      console.log('[CLIENT] tournamentState received');
+      useTournamentStore.getState().setTournament(data);
+    };
+
+    const handleTournamentChat = (msg: TournamentChatMessage) => {
+      console.log('[CLIENT] tournamentChat received:', msg.nickname);
+      const current = useTournamentStore.getState().tournament;
+      if (current) {
+        useTournamentStore.getState().setTournament({
+          ...current,
+          recentChat: [...current.recentChat, msg],
+        });
+      }
+    };
+
+    const handleTournamentGameStarting = (_data: { roomId: string }) => {
+      console.log('[CLIENT] tournamentGameStarting received');
+      // Reset game phase so GameApp renders the game board when gameState arrives
+      // The game state will follow via gameState event
+      useGameStore.getState().setAppPhase('playing');
+    };
+
+    const handleTournamentGameCompleted = (_data: { standings: TournamentStanding[] }) => {
+      console.log('[CLIENT] tournamentGameCompleted received');
+      // Tournament state update will follow via tournamentState event
+    };
+
+    const handleTournamentCompleted = (data: { winnerId: string; standings: TournamentStanding[] }) => {
+      console.log('[CLIENT] tournamentCompleted received, winner:', data.winnerId);
+    };
+
     // Register event listeners
     socket.on('lobbyUpdate', handleLobbyUpdate);
     socket.on('gameStarted', handleGameStarted);
@@ -368,6 +405,11 @@ export function useSocketEvents() {
     socket.on('chatMessage', handleChatMessage);
     socket.on('rematchVoteUpdate', handleRematchVoteUpdate);
     socket.on('rematchStarting', handleRematchStarting);
+    socket.on('tournamentState', handleTournamentState);
+    socket.on('tournamentChat', handleTournamentChat);
+    socket.on('tournamentGameStarting', handleTournamentGameStarting);
+    socket.on('tournamentGameCompleted', handleTournamentGameCompleted);
+    socket.on('tournamentCompleted', handleTournamentCompleted);
 
     console.log('[useSocketEvents] All listeners registered');
 
@@ -396,6 +438,11 @@ export function useSocketEvents() {
       socket.off('chatMessage', handleChatMessage);
       socket.off('rematchVoteUpdate', handleRematchVoteUpdate);
       socket.off('rematchStarting', handleRematchStarting);
+      socket.off('tournamentState', handleTournamentState);
+      socket.off('tournamentChat', handleTournamentChat);
+      socket.off('tournamentGameStarting', handleTournamentGameStarting);
+      socket.off('tournamentGameCompleted', handleTournamentGameCompleted);
+      socket.off('tournamentCompleted', handleTournamentCompleted);
     };
   }, [socket]); // Only depend on socket
 }

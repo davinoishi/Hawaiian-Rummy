@@ -10,9 +10,10 @@ interface JoinScreenProps {
   onViewProfile?: () => void;
   onViewLeaderboard?: () => void;
   onCreateProfile?: () => void;
+  onViewAbout?: () => void;
 }
 
-export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }: JoinScreenProps) {
+export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile, onViewAbout }: JoinScreenProps) {
   const emit = useSocketStore((state) => state.emit);
   const setPlayerName = useGameStore((state) => state.setPlayerName);
   const { playClick } = useAudio();
@@ -262,6 +263,14 @@ export function JoinScreen({ onViewProfile, onViewLeaderboard, onCreateProfile }
               className="text-emerald-300 hover:text-emerald-100 underline"
             >
               Leaderboard
+            </button>
+          )}
+          {onViewAbout && (
+            <button
+              onClick={onViewAbout}
+              className="text-emerald-300 hover:text-emerald-100 underline"
+            >
+              About
             </button>
           )}
         </div>

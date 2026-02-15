@@ -14,6 +14,7 @@ import { gameManager } from './game-manager.js';
 import { profileManager } from './profile-manager.js';
 import { setupSocketHandlers } from './socket-handlers/index.js';
 import { AIManager } from './ai/ai-manager.js';
+import { TournamentManager } from './tournament-manager.js';
 import { AI_NAMES } from '../shared/game-engine/constants.js';
 import profileRoutes from './routes/profile-routes.js';
 
@@ -114,6 +115,12 @@ const io = new Server(server, {
 // ===== AI MANAGER =====
 const aiManager = new AIManager(gameManager, io);
 
+// ===== TOURNAMENT MANAGER =====
+const tournamentManager = new TournamentManager(gameManager, aiManager, io, profileManager);
+tournamentManager.loadTournaments();
+setTournamentManager(tournamentManager);
+aiManager.setTournamentManager(tournamentManager);
+
 // Fisher-Yates shuffle for random AI selection
 function shuffleArray<T>(array: T[]): T[] {
   const shuffled = [...array];
@@ -163,13 +170,14 @@ io.on('connection', (socket) => {
     gameManager,
     logAnalytics,
     spawnAIPlayers,
-    aiManager
+    aiManager,
+    tournamentManager
   });
 });
 
 // ===== DISCONNECTED PLAYER TURN HANDLER =====
 // Periodically check if the current player is disconnected and skip their turn
-import { broadcastGameState } from './socket-handlers/game-handler.js';
+import { broadcastGameState, setTournamentManager } from './socket-handlers/game-handler.js';
 
 setInterval(() => {
   for (const room of gameManager.getAllRooms()) {
@@ -204,4 +212,15 @@ server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
 
-export { io, gameManager, aiManager };
+// ===== GRACEFUL SHUTDOWN =====
+function gracefulShutdown(signal: string) {
+  console.log(`\n[Server] Received ${signal}, saving state before exit...`);
+  tournamentManager.saveAllState();
+  console.log('[Server] State saved. Exiting.');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+export { io, gameManager, aiManager, tournamentManager };

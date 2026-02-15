@@ -48,6 +48,23 @@ import {
   getRandomPersonality,
   AI_PERSONALITIES
 } from './ai-personalities';
+import { Suit } from '../game-engine/types';
+import { SUITS } from '../game-engine/constants';
+
+/**
+ * Analysis of a suit's potential for building runs
+ */
+interface SuitAnalysis {
+  suit: Suit;
+  cards: Card[];                    // Non-wild cards of this suit
+  consecutiveLength: number;        // Longest consecutive sequence
+  consecutiveCards: Card[];         // Cards in the longest sequence
+  gapsInSequence: number;           // Number of gaps that need wildcards
+  totalPotentialLength: number;     // Length if gaps filled with available wildcards
+  canCompleteRun: boolean;          // Can complete target run with current cards + wilds
+  deadSuit: boolean;                // Too scattered to be useful
+  score: number;                    // Overall score for this suit
+}
 
 /**
  * Standard AI Strategy implementation with personality support
@@ -364,6 +381,30 @@ export class StandardAIStrategy implements AIStrategy {
       threshold = canLayoff ? 10 : 25;
     }
 
+    // SUIT FOCUS: For long run rounds, apply suit focus penalty
+    const requirements = ROUND_REQUIREMENTS[ctx.currentRound];
+    if (this.isLongRunRound(ctx.currentRound)) {
+      const largestRunSize = Math.max(...requirements.runSizes);
+      const bestSuit = this.getBestSuitForRun(ctx.hand, largestRunSize);
+
+      if (bestSuit && bestSuit.suit !== card.suit) {
+        // Wrong suit for our focused run - apply penalty
+        // Still might take it if it helps with sets
+        const hasSetRequirement = requirements.sets > 0;
+        if (hasSetRequirement) {
+          // Check if this card helps sets at all
+          const sameRank = ctx.hand.filter(c => c.rank === card.rank && !c.isWild);
+          if (sameRank.length === 0) {
+            // No matching rank - this card doesn't help sets either, skip it
+            threshold += 20;
+          }
+        } else {
+          // No set requirement - wrong suit card is nearly useless
+          threshold += 30;
+        }
+      }
+    }
+
     // Take the discard if the new card is more valuable than what we'd throw away
     return cardValue > discardValue + threshold;
   }
@@ -526,6 +567,28 @@ export class StandardAIStrategy implements AIStrategy {
       return true;
     }
 
+    // SUIT FOCUS: For long run rounds (7+ card runs), be very selective about suit
+    if (this.isLongRunRound(currentRound) && !card.isWild) {
+      const largestRunSize = Math.max(...requirements.runSizes);
+      const bestSuit = this.getBestSuitForRun(hand, largestRunSize);
+
+      if (bestSuit && bestSuit.suit !== card.suit) {
+        // Card is not in our focused suit - only buy if it's for sets
+        // and even then, require a much higher threshold
+        const isForSet = roundStrategy.bottleneckType === 'set' ||
+                        requirements.sets > 0;
+
+        if (!isForSet) {
+          // No set requirement, and card is wrong suit - don't buy
+          return false;
+        }
+
+        // Has set requirement, but still apply penalty for wrong suit
+        const suitPenalty = 15;
+        return bottleneckValue + handSizeBonus + junkBonus > finalThreshold + suitPenalty;
+      }
+    }
+
     return bottleneckValue + handSizeBonus + junkBonus > finalThreshold;
   }
 
@@ -616,69 +679,233 @@ export class StandardAIStrategy implements AIStrategy {
   }
 
   /**
-   * Calculate how much a card helps build runs
+   * Analyze a single suit's potential for building runs
+   */
+  private analyzeSuit(suit: Suit, hand: Card[], targetRunSize: number, wildcardCount: number): SuitAnalysis {
+    const suitCards = hand.filter(c => c.suit === suit && !c.isWild);
+
+    if (suitCards.length === 0) {
+      return {
+        suit,
+        cards: [],
+        consecutiveLength: 0,
+        consecutiveCards: [],
+        gapsInSequence: 0,
+        totalPotentialLength: wildcardCount,
+        canCompleteRun: wildcardCount >= targetRunSize,
+        deadSuit: true,
+        score: 0
+      };
+    }
+
+    const sorted = sortCardsByRank(suitCards);
+    const values = sorted.map(c => getRankValue(c.rank));
+
+    // Find the best consecutive sequence
+    let bestSequenceStart = 0;
+    let bestSequenceEnd = 0;
+    let bestConsecutive = 1;
+    let bestGaps = 0;
+
+    // Try each starting position
+    for (let start = 0; start < sorted.length; start++) {
+      let consecutive = 1;
+      let gaps = 0;
+      let end = start;
+
+      for (let i = start + 1; i < sorted.length; i++) {
+        const gap = values[i] - values[i - 1];
+
+        if (gap === 0) {
+          // Duplicate rank, skip
+          continue;
+        } else if (gap === 1) {
+          // Consecutive
+          consecutive++;
+          end = i;
+        } else if (gap <= 3) {
+          // Small gap (1-2 cards needed)
+          gaps += gap - 1;
+          consecutive += gap;
+          end = i;
+        } else {
+          // Gap too large, break sequence
+          break;
+        }
+      }
+
+      // Check if this is the best sequence considering gaps vs wildcards
+      const effectiveLength = consecutive;
+      const currentBestEffective = bestConsecutive;
+
+      if (effectiveLength > currentBestEffective ||
+          (effectiveLength === currentBestEffective && gaps < bestGaps)) {
+        bestSequenceStart = start;
+        bestSequenceEnd = end;
+        bestConsecutive = consecutive;
+        bestGaps = gaps;
+      }
+    }
+
+    const consecutiveCards = sorted.slice(bestSequenceStart, bestSequenceEnd + 1);
+    const totalPotentialLength = bestConsecutive + Math.max(0, wildcardCount - bestGaps);
+
+    // A suit is "dead" if:
+    // - Not enough cards + wildcards to complete the run
+    // - Cards are too scattered (gaps > wildcards + 2)
+    const minCardsNeeded = targetRunSize - wildcardCount;
+    const isDead = suitCards.length < minCardsNeeded - 2 || // Not enough cards
+                   (bestGaps > wildcardCount + 2); // Too many gaps
+
+    // Calculate score based on:
+    // - How close to target (most important)
+    // - Gaps needed (fewer is better)
+    // - Actual cards in sequence (more is better)
+    let score = 0;
+    const progressPercent = Math.min(totalPotentialLength, targetRunSize) / targetRunSize;
+
+    if (progressPercent >= 1.0) {
+      score = 100; // Can complete!
+      // Bonus for fewer gaps (less wildcard dependency)
+      score += (wildcardCount - bestGaps) * 5;
+    } else if (progressPercent >= 0.8) {
+      score = 70;
+    } else if (progressPercent >= 0.6) {
+      score = 50;
+    } else if (progressPercent >= 0.4) {
+      score = 30;
+    } else {
+      score = 10;
+    }
+
+    // Bonus for actual consecutive cards (not relying on wildcards)
+    score += consecutiveCards.length * 3;
+
+    // Penalty for gaps
+    score -= bestGaps * 5;
+
+    // Dead suit gets minimal score
+    if (isDead) {
+      score = Math.min(score, 5);
+    }
+
+    return {
+      suit,
+      cards: suitCards,
+      consecutiveLength: consecutiveCards.length,
+      consecutiveCards,
+      gapsInSequence: bestGaps,
+      totalPotentialLength,
+      canCompleteRun: totalPotentialLength >= targetRunSize,
+      deadSuit: isDead,
+      score: Math.max(0, score)
+    };
+  }
+
+  /**
+   * Analyze all suits and find the best one for building a run
+   */
+  private getBestSuitForRun(hand: Card[], targetRunSize: number): SuitAnalysis | null {
+    const wildcards = getWildcards(hand);
+    const wildcardCount = wildcards.length;
+
+    const analyses: SuitAnalysis[] = SUITS.map(suit =>
+      this.analyzeSuit(suit, hand, targetRunSize, wildcardCount)
+    );
+
+    // Sort by score descending
+    analyses.sort((a, b) => b.score - a.score);
+
+    // Return the best non-dead suit, or null if all are dead
+    const best = analyses.find(a => !a.deadSuit);
+    return best || (analyses[0].cards.length > 0 ? analyses[0] : null);
+  }
+
+  /**
+   * Check if this is a "long run" round requiring suit focus
+   */
+  private isLongRunRound(round: number): boolean {
+    const requirements = ROUND_REQUIREMENTS[round];
+    // Rounds with runs of 7+ cards need suit focus
+    return requirements.runSizes.some(size => size >= 7);
+  }
+
+  /**
+   * Calculate how much a card helps build runs (IMPROVED VERSION)
+   * Now uses suit analysis for smarter detection
    */
   private calculateRunPotential(card: Card, hand: Card[], targetRunSize: number): number {
-    const sameSuit = hand.filter(c => c.suit === card.suit && !c.isWild);
     const wildcards = getWildcards(hand);
+    const wildcardCount = wildcards.length;
 
-    // Add the card to evaluate
-    const allSuitCards = [...sameSuit];
-    if (!allSuitCards.find(c => c.id === card.id)) {
-      allSuitCards.push(card);
+    // Analyze the card's suit
+    const suitAnalysis = this.analyzeSuit(card.suit as Suit, hand, targetRunSize, wildcardCount);
+
+    // If suit is dead, card has minimal value for runs
+    if (suitAnalysis.deadSuit) {
+      return 3;
     }
 
-    if (allSuitCards.length === 0) return 0;
-
-    const sorted = sortCardsByRank(allSuitCards);
-
-    // Find the best consecutive sequence this card is part of
-    let maxRunLength = 1;
-    let currentRun = 1;
-    let cardInRun = false;
+    // Check if the card is part of the best consecutive sequence
     const cardValue = getRankValue(card.rank);
+    const sequenceValues = suitAnalysis.consecutiveCards.map(c => getRankValue(c.rank));
+    const minSeq = Math.min(...sequenceValues, cardValue);
+    const maxSeq = Math.max(...sequenceValues, cardValue);
 
-    for (let i = 1; i < sorted.length; i++) {
-      const prevValue = getRankValue(sorted[i - 1].rank);
-      const currValue = getRankValue(sorted[i].rank);
-      const gap = currValue - prevValue;
+    // Card is "in sequence" if it's within or adjacent to the sequence
+    const isInOrAdjacentToSequence =
+      sequenceValues.includes(cardValue) ||
+      cardValue === minSeq - 1 ||
+      cardValue === maxSeq + 1;
 
-      if (gap === 1) {
-        currentRun++;
-      } else if (gap === 0) {
-        // Duplicate rank, skip
-        continue;
-      } else if (gap <= wildcards.length + 1) {
-        // Can fill gap with wildcards
-        currentRun += gap;
-      } else {
-        currentRun = 1;
+    // For long runs (7+), apply suit focus bonus
+    const isLongRun = targetRunSize >= 7;
+    let suitFocusBonus = 0;
+
+    if (isLongRun) {
+      // Check if this suit is the best one for the hand
+      const bestSuit = this.getBestSuitForRun(hand, targetRunSize);
+      if (bestSuit && bestSuit.suit === card.suit) {
+        // This card is in the focused suit - big bonus
+        suitFocusBonus = 15;
+
+        // Even bigger bonus if it extends the sequence
+        if (isInOrAdjacentToSequence) {
+          suitFocusBonus += 10;
+        }
+      } else if (bestSuit && bestSuit.suit !== card.suit) {
+        // Card is not in the focused suit - penalty for long runs
+        return 5; // Low value, we don't want to accumulate off-suit cards
       }
-
-      // Check if our card is in this run
-      if (currValue === cardValue || prevValue === cardValue) {
-        cardInRun = true;
-      }
-
-      maxRunLength = Math.max(maxRunLength, currentRun);
     }
 
-    // Score based on how close we are to target run size
-    const runProgress = Math.min(maxRunLength + wildcards.length, targetRunSize);
-    const progressPercent = runProgress / targetRunSize;
+    // Calculate base score from suit analysis
+    let score = 0;
+    const progressPercent = Math.min(suitAnalysis.totalPotentialLength, targetRunSize) / targetRunSize;
 
-    // Higher scores for longer runs, especially when close to target
     if (progressPercent >= 1.0) {
-      return 50;  // Can complete the run!
+      score = 50;  // Can complete the run!
     } else if (progressPercent >= 0.7) {
-      return 35;  // Very close
+      score = 35;  // Very close
     } else if (progressPercent >= 0.5) {
-      return 25;  // Good progress
+      score = 25;  // Good progress
     } else if (progressPercent >= 0.3) {
-      return 15;  // Some progress
+      score = 15;  // Some progress
+    } else {
+      score = 5;   // Minimal contribution
     }
 
-    return 5;  // Minimal contribution
+    // Bonus for cards in the consecutive sequence
+    if (isInOrAdjacentToSequence) {
+      score += 10;
+    }
+
+    // Penalty for cards that would require many wildcards to connect
+    if (!isInOrAdjacentToSequence && suitAnalysis.gapsInSequence > wildcardCount) {
+      score -= 10;
+    }
+
+    return Math.max(0, score + suitFocusBonus);
   }
 
   /**
@@ -1157,12 +1384,8 @@ export class StandardAIStrategy implements AIStrategy {
       const nonWildCard = meld.cards.find(c => !c.isWild);
       return nonWildCard ? card.rank === nonWildCard.rank : false;
     } else {
-      if (card.isWild) return true;
-      const nonWildCard = meld.cards.find(c => !c.isWild);
-      if (!nonWildCard || card.suit !== nonWildCard.suit) return false;
-
-      const testCards = [...meld.cards, card];
-      return isValidRun(testCards);
+      // Use the game engine's run validation for accuracy
+      return canAddToRun(card, meld);
     }
   }
 }

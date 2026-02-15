@@ -170,6 +170,10 @@ export function HowToPlayModal() {
               <li>Face cards (K, Q, J): 10 points</li>
               <li>Number cards (3-10): Face value</li>
             </ul>
+            <p className="mt-2 text-sm">
+              If the draw deck runs out, the round ends immediately with no winner.
+              All players' remaining hand cards are scored as points.
+            </p>
           </section>
 
           {/* Keyboard Shortcuts */}

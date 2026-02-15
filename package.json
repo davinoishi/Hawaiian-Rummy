@@ -9,7 +9,8 @@
     "start:old": "node server.js",
     "build": "tsc -p tsconfig.server.json",
     "client:dev": "cd client && npm run dev",
-    "client:build": "cd client && npm run build"
+    "client:build": "cd client && npm run build",
+    "start:pm2": "pm2 start ecosystem.config.cjs"
   },
   "keywords": [],
   "author": "",

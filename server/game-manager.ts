@@ -699,6 +699,13 @@ export class GameManager {
       disconnectedPlayerIds: newDisconnectedPlayerIds
     };
 
+    // Transfer profile ID mapping
+    const profileId = room.playerProfileIds.get(oldId);
+    if (profileId) {
+      room.playerProfileIds.delete(oldId);
+      room.playerProfileIds.set(newId, profileId);
+    }
+
     console.log(`[Room ${roomId}] Updated socket ID: ${oldId} -> ${newId} for ${playerName}`);
     return true;
   }
@@ -821,7 +828,7 @@ export class GameManager {
   /**
    * Restore a game from saved state
    */
-  restoreGameFromSave(roomId: string, humanPlayerId: string, savedState: SavedGameState, aiManager?: any): boolean {
+  restoreGameFromSave(roomId: string, humanPlayerId: string, savedState: SavedGameState, aiManager?: any, options?: { preserveAIIds?: boolean }): boolean {
     const room = this.rooms.get(roomId);
     if (!room) return false;
 
@@ -838,6 +845,10 @@ export class GameManager {
       if (savedPlayerId === savedHumanPlayerId) {
         // Map to new human player ID
         aiIdMap[savedPlayerId] = humanPlayerId;
+      } else if (options?.preserveAIIds) {
+        // Keep original AI IDs (e.g. ai-tournament-{Name}) so tournament lookups work
+        aiIdMap[savedPlayerId] = savedPlayerId;
+        newAiPlayerIds.push(savedPlayerId);
       } else {
         // Create new AI ID
         const newAiId = `ai-restored-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;

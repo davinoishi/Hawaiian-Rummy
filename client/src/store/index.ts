@@ -8,3 +8,4 @@ export { useUIStore } from './ui-store';
 export { useTutorialStore, TUTORIAL_STEPS, type TutorialStep } from './tutorial-store';
 export { useSettingsStore, type ThemeMode } from './settings-store';
 export { useProfileStore } from './profile-store';
+export { useTournamentStore } from './tournament-store';

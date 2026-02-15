@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { useUIStore, useSettingsStore, useGameStore } from '../../store';
 import { useProfileStore } from '../../store/profile-store';
 import { useSocketStore } from '../../store/socket-store';
+import { useTournamentStore } from '../../store/tournament-store';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { useNavigate } from 'react-router-dom';
 import type { RoundRequirement } from '@shared/game-engine/types';
@@ -22,6 +23,7 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const setShowHowToPlay = useUIStore((state) => state.setShowHowToPlay);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+  const [tournamentExitModalOpen, setTournamentExitModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
@@ -33,10 +35,13 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const reset = useGameStore((state) => state.reset);
   const navigate = useNavigate();
 
+  const isInTournament = useTournamentStore((state) => state.isInTournament);
+  const tournament = useTournamentStore((state) => state.tournament);
+
   // Check if this is a single-player game (only 1 non-AI player)
   const humanPlayers = players?.filter(p => !p.isAI) || [];
   const isSinglePlayer = humanPlayers.length === 1;
-  const canSave = isSinglePlayer && profileId && !tutorialMode;
+  const canSave = isSinglePlayer && profileId && !tutorialMode && !isInTournament;
 
   const handleSaveAndExit = useCallback(() => {
     console.log('[SAVE] handleSaveAndExit called', { roomId, profileId, isSaving });
@@ -81,13 +86,27 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
     }
   }, [clearGameSession, reset, profileId, navigate]);
 
+  const handleTournamentExit = useCallback(() => {
+    clearGameSession();
+    reset();
+    if (tournament) {
+      navigate(`/tournament/${tournament.id}/standings`);
+    } else if (profileId) {
+      navigate(`/p/${profileId}`);
+    } else {
+      navigate('/');
+    }
+  }, [clearGameSession, reset, tournament, profileId, navigate]);
+
   return (
     <div className="panel p-3 mb-4">
       <div className="flex items-center justify-between gap-4">
-        {/* Round number */}
+        {/* Round number (and tournament info) */}
         <div className="flex items-center gap-3">
           <span className={`text-lg font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
-            Round {round}
+            {isInTournament && tournament
+              ? `${tournament.name}: Game ${(tournament.progress as any).currentGameNumber} - Round ${round}`
+              : `Round ${round}`}
           </span>
           {isMyTurn && (
             <span className="text-xs bg-yellow-500 text-yellow-900 px-2 py-1 rounded-full font-medium">
@@ -131,7 +150,18 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
               title="Save & Exit"
             >
               <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </button>
+          )}
+          {isInTournament && (
+            <button
+              onClick={() => setTournamentExitModalOpen(true)}
+              className="btn-ghost p-2"
+              title="Exit Tournament Game"
+            >
+              <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
             </button>
           )}
@@ -198,6 +228,52 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
               <button
                 onClick={() => setSaveModalOpen(false)}
                 disabled={isSaving}
+                className="btn-ghost w-full"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Tournament Exit Modal */}
+      {tournamentExitModalOpen && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50 p-4"
+          style={{ zIndex: 9999 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setTournamentExitModalOpen(false);
+            }
+          }}
+        >
+          <div
+            className={`${isLight ? 'bg-white' : 'bg-gray-800'} rounded-lg p-6 max-w-md w-full shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className={`text-xl font-bold mb-4 ${isLight ? 'text-gray-900' : 'text-white'}`}>
+              Exit Tournament Game
+            </h2>
+            <p className={`mb-2 ${isLight ? 'text-gray-600' : 'text-gray-300'}`}>
+              Your tournament progress is automatically saved. You can rejoin later using the invite code.
+            </p>
+            {tournament && (
+              <p className={`mb-6 text-sm ${isLight ? 'text-gray-500' : 'text-gray-400'}`}>
+                Invite code: <span className="font-mono font-bold">{tournament.inviteCode}</span>
+              </p>
+            )}
+
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={handleTournamentExit}
+                className="btn-primary w-full"
+              >
+                Exit to Standings
+              </button>
+              <button
+                onClick={() => setTournamentExitModalOpen(false)}
                 className="btn-ghost w-full"
               >
                 Cancel

@@ -4,7 +4,9 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useProfileStore, useSettingsStore, useSocketStore, useGameStore } from '../../store';
+import { useTournamentStore } from '../../store/tournament-store';
 
 interface SavedGameInfo {
   id: string;
@@ -25,6 +27,7 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
   const isLight = resolvedTheme === 'light';
   const emit = useSocketStore((state) => state.emit);
   const setPlayerName = useGameStore((state) => state.setPlayerName);
+  const navigate = useNavigate();
 
   const [isEditing, setIsEditing] = useState(false);
   const [newNickname, setNewNickname] = useState('');
@@ -37,6 +40,31 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
   const [joinPassword, setJoinPassword] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState('');
+
+  // Tournament state
+  const [showTournamentForm, setShowTournamentForm] = useState(false);
+  const [tournamentName, setTournamentName] = useState('');
+  const [isCreatingTournament, setIsCreatingTournament] = useState(false);
+  const [showJoinTournament, setShowJoinTournament] = useState(false);
+  const [tournamentInviteCode, setTournamentInviteCode] = useState('');
+
+  // Active tournaments
+  interface TournamentSummary {
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    inviteCode: string;
+    hostProfileId: string;
+    currentGameNumber: number;
+    totalGames: number;
+    humanCount: number;
+    totalCount: number;
+    createdAt: string;
+  }
+  const [activeTournaments, setActiveTournaments] = useState<TournamentSummary[]>([]);
+  const [checkingTournaments, setCheckingTournaments] = useState(true);
+  const [deletingTournamentId, setDeletingTournamentId] = useState<string | null>(null);
 
   // Saved game state
   const [savedGame, setSavedGame] = useState<SavedGameInfo | null>(null);
@@ -59,6 +87,21 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
         setSavedGame(response.savedGame);
       } else {
         setSavedGame(null);
+      }
+    });
+  }, [profileId, emit]);
+
+  // Check for active tournaments when profile loads
+  useEffect(() => {
+    if (!profileId) return;
+
+    setCheckingTournaments(true);
+    emit('getMyTournaments', { profileId }, (response: { success: boolean; tournaments?: TournamentSummary[] }) => {
+      setCheckingTournaments(false);
+      if (response.success && response.tournaments) {
+        setActiveTournaments(response.tournaments);
+      } else {
+        setActiveTournaments([]);
       }
     });
   }, [profileId, emit]);
@@ -137,6 +180,45 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
       profileId: profile.id  // Pass profile ID so stats can be tracked
     });
   }, [profile, joinRoomId, joinPassword, emit, setPlayerName]);
+
+  const handleCreateTournament = useCallback(() => {
+    if (!profile || !tournamentName.trim()) return;
+    setIsCreatingTournament(true);
+    setJoinError('');
+
+    emit('createTournament', {
+      name: tournamentName.trim(),
+      type: 'marathon' as const,
+      hostProfileId: profile.id,
+    }, (response: { success: boolean; tournament?: any; error?: string }) => {
+      setIsCreatingTournament(false);
+      if (response.success && response.tournament) {
+        useTournamentStore.getState().setTournament(response.tournament);
+        navigate(`/tournament/${response.tournament.id}`);
+      } else {
+        setJoinError(response.error || 'Failed to create tournament');
+      }
+    });
+  }, [profile, tournamentName, emit, navigate]);
+
+  const handleJoinTournament = useCallback(() => {
+    if (!profile || !tournamentInviteCode.trim()) return;
+    setIsJoining(true);
+    setJoinError('');
+
+    emit('joinTournament', {
+      inviteCode: tournamentInviteCode.trim().toUpperCase(),
+      profileId: profile.id,
+    }, (response: { success: boolean; tournament?: any; error?: string }) => {
+      setIsJoining(false);
+      if (response.success && response.tournament) {
+        useTournamentStore.getState().setTournament(response.tournament);
+        navigate(`/tournament/${response.tournament.id}`);
+      } else {
+        setJoinError(response.error || 'Invalid invite code');
+      }
+    });
+  }, [profile, tournamentInviteCode, emit, navigate]);
 
   if (isLoading) {
     return (
@@ -286,6 +368,96 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
               </div>
             )}
 
+            {/* Active Tournaments Section */}
+            {!checkingTournaments && activeTournaments.length > 0 && (
+              <div className={`p-4 rounded-lg mb-3 ${isLight ? 'bg-purple-50 border border-purple-200' : 'bg-purple-900/30 border border-purple-700/50'}`}>
+                <h3 className={`font-semibold mb-3 ${isLight ? 'text-purple-800' : 'text-purple-200'}`}>
+                  Active Tournaments
+                </h3>
+                <div className="space-y-2">
+                  {activeTournaments.map((t) => (
+                    <div
+                      key={t.id}
+                      className={`p-3 rounded-lg ${isLight ? 'bg-white/80' : 'bg-purple-800/30'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-medium truncate ${isLight ? 'text-purple-900' : 'text-purple-100'}`}>
+                              {t.name}
+                            </span>
+                            <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                              t.type === 'marathon'
+                                ? (isLight ? 'bg-blue-100 text-blue-700' : 'bg-blue-800/50 text-blue-300')
+                                : t.type === 'first-to-5000'
+                                ? (isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-800/50 text-amber-300')
+                                : (isLight ? 'bg-green-100 text-green-700' : 'bg-green-800/50 text-green-300')
+                            }`}>
+                              {t.type === 'marathon' ? 'Marathon' : t.type === 'first-to-5000' ? '5000' : 'March Madness'}
+                            </span>
+                          </div>
+                          <div className={`text-xs mt-1 ${isLight ? 'text-purple-500' : 'text-purple-400'}`}>
+                            {t.status === 'completed'
+                              ? 'Completed'
+                              : `Game ${t.currentGameNumber} of ${t.totalGames}`}
+                            {' · '}{t.humanCount} player{t.humanCount !== 1 ? 's' : ''}
+                            {' · '}<span className="font-mono">{t.inviteCode}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 ml-3">
+                          <button
+                            onClick={() => {
+                              emit('rejoinTournament', { tournamentId: t.id, profileId }, (response: { success: boolean; tournament?: any }) => {
+                                if (response.success && response.tournament) {
+                                  useTournamentStore.getState().setTournament(response.tournament);
+                                }
+                              });
+                              navigate(`/tournament/${t.id}/standings`);
+                            }}
+                            className={`px-3 py-1.5 text-sm rounded-lg ${isLight ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}`}
+                          >
+                            {t.status === 'completed' ? 'View Results' : 'Resume'}
+                          </button>
+                          {t.hostProfileId === profileId && (
+                            deletingTournamentId === t.id ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => {
+                                    emit('deleteTournament', { tournamentId: t.id, profileId });
+                                    setActiveTournaments(prev => prev.filter(at => at.id !== t.id));
+                                    setDeletingTournamentId(null);
+                                  }}
+                                  className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded"
+                                >
+                                  Delete
+                                </button>
+                                <button
+                                  onClick={() => setDeletingTournamentId(null)}
+                                  className="px-2 py-1 text-xs btn-ghost"
+                                >
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setDeletingTournamentId(t.id)}
+                                className={`p-1.5 rounded ${isLight ? 'hover:bg-red-100 text-red-500' : 'hover:bg-red-900/30 text-red-400'}`}
+                                title="Delete tournament"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {!showJoinInput ? (
               <div className="flex gap-3">
                 <button
@@ -364,6 +536,110 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
             <button onClick={onViewLeaderboard} className="btn-ghost w-full">
               View Leaderboard
             </button>
+
+            {/* Tournament Section */}
+            <div className={`border-t pt-3 ${isLight ? 'border-emerald-200' : 'border-emerald-700'}`}>
+              {!showTournamentForm && !showJoinTournament ? (
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowTournamentForm(true)}
+                    disabled={isJoining || isResumingGame}
+                    className="btn-secondary flex-1"
+                  >
+                    Host Tournament
+                  </button>
+                  <button
+                    onClick={() => setShowJoinTournament(true)}
+                    disabled={isJoining || isResumingGame}
+                    className="btn-ghost flex-1"
+                  >
+                    Join Tournament
+                  </button>
+                </div>
+              ) : showTournamentForm ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className={`block text-sm mb-1 ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
+                      Tournament Name
+                    </label>
+                    <input
+                      type="text"
+                      value={tournamentName}
+                      onChange={(e) => setTournamentName(e.target.value)}
+                      placeholder="Enter tournament name"
+                      className={`w-full px-4 py-2 rounded-lg border ${isLight ? 'bg-white border-emerald-300 text-emerald-900' : 'bg-emerald-700 border-emerald-600 text-white'}`}
+                      maxLength={40}
+                      disabled={isCreatingTournament}
+                      autoFocus
+                    />
+                  </div>
+                  <div className={`text-xs ${isLight ? 'text-emerald-500' : 'text-emerald-400'}`}>
+                    Marathon: 4 players, 10 full games, lowest cumulative score wins
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowTournamentForm(false);
+                        setTournamentName('');
+                        setJoinError('');
+                      }}
+                      disabled={isCreatingTournament}
+                      className="btn-ghost flex-1"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateTournament}
+                      disabled={isCreatingTournament || !tournamentName.trim()}
+                      className="btn-primary flex-1"
+                    >
+                      {isCreatingTournament ? 'Creating...' : 'Create Tournament'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className={`block text-sm mb-1 ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
+                      Invite Code
+                    </label>
+                    <input
+                      type="text"
+                      value={tournamentInviteCode}
+                      onChange={(e) => {
+                        setTournamentInviteCode(e.target.value.toUpperCase());
+                        setJoinError('');
+                      }}
+                      placeholder="Enter invite code"
+                      className={`w-full px-4 py-2 rounded-lg border uppercase ${isLight ? 'bg-white border-emerald-300 text-emerald-900' : 'bg-emerald-700 border-emerald-600 text-white'}`}
+                      maxLength={6}
+                      disabled={isJoining}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => {
+                        setShowJoinTournament(false);
+                        setTournamentInviteCode('');
+                        setJoinError('');
+                      }}
+                      disabled={isJoining}
+                      className="btn-ghost flex-1"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleJoinTournament}
+                      disabled={isJoining || !tournamentInviteCode.trim()}
+                      className="btn-primary flex-1"
+                    >
+                      {isJoining ? 'Joining...' : 'Join Tournament'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -418,6 +694,26 @@ export function ProfilePage({ profileId, onViewLeaderboard }: ProfilePageProps) 
             </div>
             <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
               Best Streak
+            </div>
+          </div>
+        </div>
+
+        {/* Tournament Stats */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className={`panel p-4 text-center ${isLight ? 'bg-white/90' : 'bg-emerald-800/90'}`}>
+            <div className={`text-3xl font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+              {profile.stats.tournamentsEntered || 0}
+            </div>
+            <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+              Tournaments Entered
+            </div>
+          </div>
+          <div className={`panel p-4 text-center ${isLight ? 'bg-white/90' : 'bg-emerald-800/90'}`}>
+            <div className={`text-3xl font-bold ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+              {profile.stats.tournamentsWon || 0}
+            </div>
+            <div className={`text-sm ${isLight ? 'text-emerald-600' : 'text-emerald-300'}`}>
+              Tournaments Won
             </div>
           </div>
         </div>

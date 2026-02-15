@@ -90,6 +90,12 @@ export function processDrawCard(state: GameState, action: DrawCardAction): Actio
     }
   };
 
+  // Check if deck is now exhausted
+  if (remainingDeck.length === 0) {
+    if (!sideEffects) sideEffects = [];
+    sideEffects.push({ type: 'ROUND_ENDED', winnerId: null });
+  }
+
   return { success: true, newState, sideEffects };
 }
 
