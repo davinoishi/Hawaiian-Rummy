@@ -6,6 +6,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore, useSocketStore, useGameStore } from '../../store';
+import { useProfileStore } from '../../store/profile-store';
 import { useTournamentStore } from '../../store/tournament-store';
 import type { MarathonProgress, MarathonGameResult } from '@shared/tournament-types';
 
@@ -19,13 +20,14 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
   const isLight = resolvedTheme === 'light';
   const emit = useSocketStore((state) => state.emit);
   const tournament = useTournamentStore((state) => state.tournament);
+  const profileId = useProfileStore((state) => state.profileId);
   const appPhase = useGameStore((state) => state.appPhase);
   const navigate = useNavigate();
 
   const [expandedGame, setExpandedGame] = useState<number | null>(null);
   const [hasContinued, setHasContinued] = useState(false);
 
-  // Auto-navigate to game when it starts after clicking Continue
+  // Auto-navigate to game when it starts after clicking Continue or Resume
   useEffect(() => {
     if (hasContinued && (appPhase === 'playing' || appPhase === 'turnOrder')) {
       navigate('/');
@@ -37,6 +39,16 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
     setHasContinued(true);
     emit('continueTournament', tournament.id);
   }, [tournament, emit]);
+
+  const handleResumeGame = useCallback(() => {
+    if (!tournament || !profileId) return;
+    setHasContinued(true);
+    emit('rejoinTournament', { tournamentId: tournament.id, profileId }, (response: { success: boolean; tournament?: any }) => {
+      if (response.success && response.tournament) {
+        useTournamentStore.getState().setTournament(response.tournament);
+      }
+    });
+  }, [tournament, profileId, emit]);
 
   if (!tournament) {
     return (
@@ -204,7 +216,7 @@ export function MarathonTracker({ onBack, onContinue }: MarathonTrackerProps) {
             </div>
           ) : gameInProgress ? (
             <button
-              onClick={() => navigate('/')}
+              onClick={handleResumeGame}
               className="btn-primary flex-1"
             >
               Resume Game {progress.currentGameNumber}
