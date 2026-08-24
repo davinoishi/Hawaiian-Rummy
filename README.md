@@ -6,7 +6,7 @@ A multiplayer card game built with TypeScript, React, and Socket.IO. This is a v
 
 ## Live Demo
 
-Play now at: **https://gdlnmnsw4amo.nobgp.com**
+Play now at: **[https://gdlnmnsw4amo.nobgp.com](https://xjpl6dawgo66.nobgp.com/)**
 
 ## Features
 
