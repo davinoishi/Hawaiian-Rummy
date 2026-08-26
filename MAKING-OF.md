@@ -382,3 +382,39 @@ Group 7+9+10+11+12+13 is next, and three of those are now better understood:
   round 7's "3 sets of 4". Detect by rank equality, not count.
 - #12 haptics toggle: the preference already exists in `useHaptics.ts` localStorage under
   `hawaiianRummy_haptics`; `settings-store` now has the pattern to follow for it.
+
+### Session 2 addendum — verifying the part I had only argued for
+
+On review, the session 2 verification above covered the sort *button* but not the actual
+claim behind item #5: that **a deal and a draw come up already ordered**. That is the
+whole point of a sticky sort, and it had been reasoned about, not measured. Tested it
+properly, on a Pixel 5 profile with `handSortMode: 'rank'` seeded into localStorage
+before the first page load, i.e. a returning player:
+
+```
+=== A. first deal, preference restored from localStorage, no button pressed ===
+  ranks: A 2 3 4 4 7 7 Q Q       DEAL ARRIVES SORTED: true
+  auto-sorting indicator: true   Sort by Rank shown active: true
+=== B. draw a card ===
+  before draw: A 2 3 4 4 7 7 Q Q     sorted=true
+  after draw : A 2 3 4 4 6 7 7 Q Q   sorted=true
+  drew 6♥ -> landed at index 5 of 10 (inserted, not appended)
+```
+
+**WRONG RESULT, and it was the test's fault, not the product's.** The first run of test B
+reported `DRAW LANDED SORTED: false`. The drawn card was a Joker and the hand read
+`Joker 2 3 4 4 6 J Q Q K` — which is correct, since `sortCardsByRank` gives Joker a rank
+value of 0. The harness scored it wrong: its rank regex was `/^(10|[AJQK2-9]|Joker)/`,
+and regex alternation is first-match-wins, so `"Joker0"` matched the `J` branch and was
+counted as a Jack (11) sitting in position 0. Reordering the alternation to
+`/^(Joker|10|[AJQK2-9])/` fixed it. Worth writing down because the failure looked exactly
+like a real product bug and would have been easy to "fix" in the wrong place.
+
+Also found while checking for leftovers: **`npm run lint` in `client/` does not work at
+all** — `ESLint couldn't find a configuration file`. The script is in `package.json` with
+`--max-warnings 0`, but no eslint config has ever existed in the repo. So the "no lint in
+CI" note from session 1 is worse than recorded: there is no lint locally either.
+
+`sortCardsBySuit()` in `card-utils.ts` has zero callers. It was already dead before this
+session (the old code hand-rolled its own suit grouping rather than calling it); left in
+place rather than widening this change.
