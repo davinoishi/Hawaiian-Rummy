@@ -178,3 +178,207 @@ pile count are typecheck-clean and built, but nobody has looked at them on a pho
 - The idle timeout is deliberately generous (2 min) and only applies with 2+ humans. If
   real games feel slow, that's the knob — `TURN_IDLE_TIMEOUT` in
   `shared/game-engine/constants.ts`.
+
+---
+
+## Session 2 — 2026-08-26 — Mobile hand handling, and a bug I shipped last session
+
+Second half of the same working day. Goal: the pre-existing `npm run build` failure,
+then group 3+5+6 from session 1's plan — mobile card reordering, sticky sort, and the
+dead sort state.
+
+### Correction to session 1
+
+**The idle clock reset was wrong.** Session 1 put `room.turnActivityAt = Date.now()` on
+*every* successful action in `GameManager.processAction()`, with the comment "any
+successful action means the table is moving". That is not what the clock measures. It
+measures whether *the player we are waiting on* is still there. `REORDER_HAND` is
+allowed at any time by any player (`game-state.ts:289` returns `{ valid: true }`
+unconditionally), so an opponent idly sorting their own hand — or the sticky sort added
+*this* session, which reorders automatically on every hand change — would have kept
+resetting the current player's idle clock and defeated the timeout entirely.
+
+Fixed by capturing whether the acting player was the current player *before* running the
+action (the action may advance the turn) and only resetting the clock then:
+
+```ts
+const actingPlayerWasCurrent = room.state.players[room.state.currentPlayerIndex] === action.playerId;
+```
+
+Worth noting the shape of this mistake: the session 1 feature was verified working, and
+it *was* working — against the tests written for it. The hole only appeared when a later
+feature started emitting a common action from a non-current player. Nothing caught it
+but re-reading the code while adding that feature.
+
+### The build fix
+
+`server/tournament-manager.ts:665`. `let roomId = tournament.activeRoomId` is
+`string | undefined` (`activeRoomId?: string` in `shared/tournament-types.ts:102`), but
+`createTournamentGameRoom()` returns `string | null`. Narrowed through a local instead of
+assigning straight back. `npm run build` now succeeds; it had been failing since before
+session 1, hidden because `npm start` runs through `tsx`, which does not typecheck.
+
+### What shipped
+
+**One sort implementation instead of three.** The suit-sort logic was written out
+separately in `PlayerHand`'s `sortedHand` memo, in `PlayerHand`'s `handleSort`, and again
+in `useKeyboardShortcuts.handleSortBySuit`. Now `sortHand(cards, mode)` in
+`shared/game-engine/card-utils.ts` and everything calls it.
+
+**The dead sort state is gone.** `PlayerHand` had:
+
+```tsx
+const [sortMode, setSortMode] = useMemo(() => {
+  const state = useUIStore.getState();          // assigned, never read
+  const getSortMode = (): SortMode => 'none';   // always 'none'
+  const setSortMode = (mode: SortMode) => {};   // no-op
+  return [getSortMode(), setSortMode] as const;
+}, []);
+```
+
+`sortMode` was hardcoded `'none'`, so the whole `sortedHand` memo below it was dead and
+the component always rendered `myHand` directly. The sort buttons only worked because
+`handleSort` bypassed all of it and emitted `reorderHand` to the server.
+
+**Sort is now sticky.** `handSortMode` lives in `settings-store` and persists to
+localStorage alongside sound and theme. An effect re-applies it whenever the hand
+changes, so a new deal, a draw, or a won buy all land already ordered. Buttons toggle
+(clicking the active mode returns to manual), and an "auto-sorting" label shows when a
+mode is on. `sortHand` is idempotent, which is what stops the effect from looping — once
+the server echoes the sorted order back, the order already matches and nothing is
+emitted.
+
+**Mobile card reordering actually works now.** `PlayerHand` was passing an empty
+callback into `handleTouchEnd`:
+
+```tsx
+(x, y) => {
+  // Handle touch drop - would need to detect target element
+}
+```
+
+Touch drag started, tracked the finger, and dropped nowhere. Now card wrappers carry
+`data-card-id`, and `cardIdAtPoint()` in `useCardSelection` resolves the drop target with
+`document.elementFromPoint(...).closest('[data-card-id]')`. Added a drag ghost that
+follows the finger (`pointer-events-none`, or it would shadow the card underneath and
+break the hit test) and a drop indicator on the hovered card.
+
+Gesture change: a drag now starts only on a *predominantly horizontal* swipe
+(`deltaX > 20 && deltaX > deltaY`) and cards carry `touch-action: pan-y`, so a vertical
+swipe still scrolls the page. That matters because the hand fills the bottom third of a
+phone screen; the old `deltaX > 20 || deltaY > 20` would have captured scroll attempts.
+
+### Wrong turns
+
+**WRONG THEORY: "the touch handlers never fire — React must not be seeing the events."**
+A probe on `document` showed touchstart plus 12 touchmove events arriving, but a
+`console.log` inside `handleTouchStart` printed nothing, and a mouse click on a card did
+nothing either. Spent time suspecting React's synthetic event system and the service
+worker. The actual reason was much dumber: **it was not the player's turn**, so
+`isDisabled` was true, and the test never waited for one. Once the harness waited on
+`document.body.innerText.includes('Your Turn')`, every handler fired immediately. Lesson:
+when a UI does nothing, check the app's own state gates before suspecting the framework.
+
+**The real blocker was the chat button, and only the hit test found it.** With the drag
+finally running (`isDragging: true`, ghost on screen, deltas up to 260px), the drop still
+did nothing. Hit-testing the finger position mid-drag returned:
+
+```
+{"ghostOnScreen":true,"top":"BUTTON.relative flex items-center gap-2 px-4 py-2 rounded","resolvedCardId":null}
+```
+
+`ChatPanel` is `fixed bottom-4 right-4 z-50`. On a 393×727 phone viewport that lands at
+roughly y 671–711, directly on top of the hand row at y 682. **The floating chat button
+has been sitting on top of the player's cards on every phone**, swallowing taps as well
+as drops — a pre-existing bug nobody had reported, found only because the drop needed a
+target. Fixed by hiding the FAB below `sm:` and docking a chat toggle (with the unread
+badge) into the `RoundInfo` header next to Help and Settings. Desktop keeps the FAB;
+verified at 1280×900 that the FAB is `display: flex` and the header button is hidden.
+
+Note this is inherent, not incidental: a `position: fixed` button over a scrolling page
+will overlap *something* at some scroll offset. Moving it into the header was the fix,
+not nudging its offset.
+
+**`e.preventDefault()` in the touchmove handler has been dead code all along.** The
+browser console during a drag:
+
+```
+Unable to preventDefault inside passive event listener invocation.   (×7)
+```
+
+React attaches `touchmove` at the root as a passive listener, so the call has never
+suppressed anything. Removed it; `touch-action: pan-y` is what actually governs
+scrolling. The pre-existing code had been relying on a no-op.
+
+**WRONG THEORY: "the blank page means the app crashed."** One verification run came back
+with an empty `document.body.innerText` and no hand. No page error was logged and the
+server was healthy (`curl` returned 200, assets present on disk). The cause was the
+**service worker** serving a cached `index.html` pointing at a bundle hash that a rebuild
+had just deleted — Vite's `emptyOutDir: true` removes the old `public/assets/*` on every
+build, and I had rebuilt three times mid-test. Running the browser context with
+`serviceWorkers: 'block'` made the runs deterministic. Not proven to affect real
+deploys (navigation is network-first in `public/sw.js:68`), so **assumed benign in
+production** — but `CACHE_NAME` is a permanent `'hawaiian-rummy-v1'` that never rotates,
+which is worth a look sometime.
+
+### Verification (all actually run)
+
+`sortHand` unit check via `tsx`, on a 9-card hand containing a Joker and a wild 2:
+
+```
+original : K♦ 🃏 3♠ A♥ 2♣ 7♠ 10♥ 3♦ Q♠
+rank     : 🃏 A♥ 2♣ 3♠ 3♦ 7♠ 10♥ Q♠ K♦   idempotent=true preservesAllCards=true 9/9
+suit     : 3♠ 7♠ Q♠ A♥ 10♥ 3♦ K♦ 🃏 2♣   idempotent=true preservesAllCards=true 9/9
+none     : unchanged=true
+```
+
+`preservesAllCards` is the one that matters — a sort that dropped a card would silently
+corrupt a hand.
+
+Real browser, Chromium via Playwright emulating a Pixel 5 (393×727, touch), driving an
+actual game against AI, touch events dispatched over CDP `Input.dispatchTouchEvent`:
+
+```
+=== 1. mobile touch drag reorder ===
+  moved 2♥2: index 0 -> 5   reordered=true  noCardsLost=true
+=== 2. chat button no longer covers the hand ===
+  cards obstructed at their centre: 0 of 6 on-screen
+  header chat button (phones): true
+  floating chat FAB computed display on phone: none
+=== 3. sticky sort ===
+  sorted hand: 🃏 2♥ 2♥ 5♣ 6♠ 9♥ 9♦ 10♥ Q♥
+  persisted: {"soundEnabled":true,"soundVolume":0.5,"themeMode":"dark","handSortMode":"rank"}
+  indicator shown: true
+  order stable over 4s (no reorder loop): true
+=== 4. sticky across sessions ===
+  localStorage handSortMode after reload: rank
+```
+
+Desktop regression check at 1280×900: FAB `display: flex`, header chat button hidden,
+mouse drag reordered the hand with no card loss.
+
+Both typechecks clean; `npm run build` and `npm run client:build` both succeed.
+
+An earlier obstruction check reported "3 of 9 cards obstructed" and was **wrong** — those
+three were at y=758 on a 727px viewport, i.e. below the fold, where `elementFromPoint`
+returns null. The check now only considers cards inside the viewport.
+
+### Found but not fixed
+
+- **The deck/discard hint labels are covered on mobile.** "Click to draw" and "Click to
+  take" are positioned `absolute -bottom-6`, which puts them underneath the
+  `panel p-4 mt-auto` player section on a phone. Playwright refused to click one:
+  `<div class="panel p-4 mt-auto">…</div> intercepts pointer events`. The deck itself is
+  still clickable, so this is cosmetic — the hint is just unreadable/untappable.
+- `public/sw.js` `CACHE_NAME` never rotates.
+
+### Notes for next session
+
+Group 7+9+10+11+12+13 is next, and three of those are now better understood:
+
+- #7 requirement progress: `getMeldsNeeded()` (`validation/requirements.ts:97`) is still
+  written and still unused.
+- #10 the `M` auto-meld shortcut maps 3 cards → set, 4+ → run, which is wrong for
+  round 7's "3 sets of 4". Detect by rank equality, not count.
+- #12 haptics toggle: the preference already exists in `useHaptics.ts` localStorage under
+  `hawaiianRummy_haptics`; `settings-store` now has the pattern to follow for it.

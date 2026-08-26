@@ -32,7 +32,8 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const isLight = resolvedTheme === 'light';
 
-  const { players, roomId, tutorialMode } = useGameStore();
+  const { players, roomId, tutorialMode, unreadChatCount } = useGameStore();
+  const setChatOpen = useGameStore((state) => state.setChatOpen);
   const turnTimeRemaining = useGameStore((state) => state.turnTimeRemaining) ?? 0;
 
   // The server only sends turnTimeRemaining on a broadcast, and an idle turn
@@ -161,6 +162,22 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
 
         {/* Help, Save, and Settings buttons */}
         <div className="flex items-center gap-1">
+          {/* Chat toggle - phones only. The floating chat button overlaps the
+              hand on a small screen, so it is docked here instead. */}
+          <button
+            onClick={() => setChatOpen(true)}
+            className="btn-ghost p-2 relative sm:hidden"
+            title="Chat"
+          >
+            <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            {(unreadChatCount ?? 0) > 0 && (
+              <span className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] rounded-full">
+                {(unreadChatCount ?? 0) > 9 ? '9+' : unreadChatCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setShowHowToPlay(true)}
             className="btn-ghost p-2"

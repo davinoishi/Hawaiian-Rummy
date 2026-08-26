@@ -5,7 +5,7 @@
 import { useEffect, useCallback } from 'react';
 import { useGameStore, useUIStore, useSettingsStore } from '../store';
 import { usePlayerActions } from './usePlayerActions';
-import { sortCardsByRank, groupBySuit } from '@shared/game-engine/card-utils';
+import { sortHand, type HandSortMode } from '@shared/game-engine/card-utils';
 
 interface UseKeyboardShortcutsProps {
   onOpenSettings?: () => void;
@@ -37,6 +37,7 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
   const players = useGameStore((state) => state.players);
 
   const toggleSound = useSettingsStore((state) => state.toggleSound);
+  const setHandSortMode = useSettingsStore((state) => state.setHandSortMode);
   const themeMode = useSettingsStore((state) => state.themeMode);
   const setThemeMode = useSettingsStore((state) => state.setThemeMode);
 
@@ -59,30 +60,16 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
   // Check if any modal is open
   const hasModalOpen = showHowToPlay || wildcardPositionPrompt || meldWildcardPositionPrompt;
 
-  // Sort by rank handler
-  const handleSortByRank = useCallback(() => {
+  // Sorting shares one implementation with the sort buttons, and sets the same
+  // sticky mode so R / S keep working across deals.
+  const applySort = useCallback((mode: HandSortMode) => {
     if (!myHand || myHand.length === 0) return;
-    const sorted = sortCardsByRank([...myHand]);
-    reorderHand(sorted.map(c => c.id));
-  }, [myHand, reorderHand]);
+    setHandSortMode(mode);
+    reorderHand(sortHand(myHand, mode).map(c => c.id));
+  }, [myHand, reorderHand, setHandSortMode]);
 
-  // Sort by suit handler
-  const handleSortBySuit = useCallback(() => {
-    if (!myHand || myHand.length === 0) return;
-    const grouped = groupBySuit([...myHand]);
-    const result: string[] = [];
-    (['♠', '♥', '♦', '♣'] as const).forEach(suit => {
-      const suitCards = grouped.get(suit);
-      if (suitCards) {
-        result.push(...sortCardsByRank(suitCards).map(c => c.id));
-      }
-    });
-    // Add jokers at the end
-    myHand.filter(c => c.rank === 'Joker' || c.isWild).forEach(c => {
-      if (!result.includes(c.id)) result.push(c.id);
-    });
-    reorderHand(result);
-  }, [myHand, reorderHand]);
+  const handleSortByRank = useCallback(() => applySort('rank'), [applySort]);
+  const handleSortBySuit = useCallback(() => applySort('suit'), [applySort]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

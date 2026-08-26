@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import type { HandSortMode } from '@shared/game-engine/card-utils';
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
@@ -15,10 +16,15 @@ interface SettingsState {
   themeMode: ThemeMode;
   resolvedTheme: 'light' | 'dark'; // Actual theme after resolving 'auto'
 
+  // Hand sorting. Sticky so a fresh deal comes up already ordered instead of
+  // making the player re-sort every round.
+  handSortMode: HandSortMode;
+
   // Actions
   setSoundEnabled: (enabled: boolean) => void;
   setSoundVolume: (volume: number) => void;
   setThemeMode: (mode: ThemeMode) => void;
+  setHandSortMode: (mode: HandSortMode) => void;
   toggleSound: () => void;
   initializeFromStorage: () => void;
 }
@@ -46,7 +52,8 @@ function saveSettings(settings: Partial<SettingsState>) {
       ...current,
       soundEnabled: settings.soundEnabled,
       soundVolume: settings.soundVolume,
-      themeMode: settings.themeMode
+      themeMode: settings.themeMode,
+      handSortMode: settings.handSortMode
     }));
   } catch {
     // Ignore errors
@@ -78,7 +85,8 @@ const defaults = {
   soundEnabled: true,
   soundVolume: 0.5,
   themeMode: 'dark' as ThemeMode,
-  resolvedTheme: 'dark' as const
+  resolvedTheme: 'dark' as const,
+  handSortMode: 'none' as HandSortMode
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -102,6 +110,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     saveSettings({ ...get(), themeMode: mode });
   },
 
+  setHandSortMode: (mode) => {
+    set({ handSortMode: mode });
+    saveSettings({ ...get(), handSortMode: mode });
+  },
+
   toggleSound: () => {
     const newValue = !get().soundEnabled;
     set({ soundEnabled: newValue });
@@ -113,12 +126,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const soundEnabled = saved.soundEnabled ?? defaults.soundEnabled;
     const soundVolume = saved.soundVolume ?? defaults.soundVolume;
     const themeMode = (saved.themeMode as ThemeMode) ?? defaults.themeMode;
+    const handSortMode = (saved.handSortMode as HandSortMode) ?? defaults.handSortMode;
     const resolved = resolveTheme(themeMode);
 
     set({
       soundEnabled,
       soundVolume,
       themeMode,
+      handSortMode,
       resolvedTheme: resolved
     });
 

@@ -255,11 +255,19 @@ export class GameManager {
       };
     }
 
+    // Whose turn it was before the action ran - the action may advance the turn.
+    const actingPlayerWasCurrent = room.state.players[room.state.currentPlayerIndex] === action.playerId;
+
     const result = processAction(room.state, action);
     if (result.success) {
       room.state = result.newState;
-      // Any successful action means the table is moving - restart the idle clock.
-      room.turnActivityAt = Date.now();
+
+      // Only the current player's own actions restart the idle clock. An
+      // opponent reordering their hand or requesting a buy is not evidence that
+      // the player we are waiting on is still at the keyboard.
+      if (actingPlayerWasCurrent) {
+        room.turnActivityAt = Date.now();
+      }
     }
     return result;
   }
