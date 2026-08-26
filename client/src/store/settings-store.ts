@@ -3,7 +3,6 @@
  */
 
 import { create } from 'zustand';
-import type { HandSortMode } from '@shared/game-engine/card-utils';
 
 export type ThemeMode = 'light' | 'dark' | 'auto';
 
@@ -16,10 +15,6 @@ interface SettingsState {
   themeMode: ThemeMode;
   resolvedTheme: 'light' | 'dark'; // Actual theme after resolving 'auto'
 
-  // Hand sorting. Sticky so a fresh deal comes up already ordered instead of
-  // making the player re-sort every round.
-  handSortMode: HandSortMode;
-
   // Vibration feedback on mobile. Lives here rather than inside useHaptics so
   // that one toggle reaches every call site: useHaptics is called from a dozen
   // components, and a useState inside it would give each its own copy.
@@ -29,7 +24,6 @@ interface SettingsState {
   setSoundEnabled: (enabled: boolean) => void;
   setSoundVolume: (volume: number) => void;
   setThemeMode: (mode: ThemeMode) => void;
-  setHandSortMode: (mode: HandSortMode) => void;
   setHapticsEnabled: (enabled: boolean) => void;
   toggleHaptics: () => void;
   toggleSound: () => void;
@@ -83,8 +77,7 @@ function saveSettings(settings: Partial<SettingsState>) {
       ...current,
       soundEnabled: settings.soundEnabled,
       soundVolume: settings.soundVolume,
-      themeMode: settings.themeMode,
-      handSortMode: settings.handSortMode
+      themeMode: settings.themeMode
     }));
   } catch {
     // Ignore errors
@@ -117,7 +110,6 @@ const defaults = {
   soundVolume: 0.5,
   themeMode: 'dark' as ThemeMode,
   resolvedTheme: 'dark' as const,
-  handSortMode: 'none' as HandSortMode,
   hapticsEnabled: true
 };
 
@@ -142,11 +134,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     saveSettings({ ...get(), themeMode: mode });
   },
 
-  setHandSortMode: (mode) => {
-    set({ handSortMode: mode });
-    saveSettings({ ...get(), handSortMode: mode });
-  },
-
   setHapticsEnabled: (enabled) => {
     set({ hapticsEnabled: enabled });
     saveHaptics(enabled);
@@ -169,14 +156,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const soundEnabled = saved.soundEnabled ?? defaults.soundEnabled;
     const soundVolume = saved.soundVolume ?? defaults.soundVolume;
     const themeMode = (saved.themeMode as ThemeMode) ?? defaults.themeMode;
-    const handSortMode = (saved.handSortMode as HandSortMode) ?? defaults.handSortMode;
     const resolved = resolveTheme(themeMode);
 
     set({
       soundEnabled,
       soundVolume,
       themeMode,
-      handSortMode,
       hapticsEnabled: loadHaptics(),
       resolvedTheme: resolved
     });

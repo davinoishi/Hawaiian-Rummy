@@ -37,7 +37,6 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
   const players = useGameStore((state) => state.players);
 
   const toggleSound = useSettingsStore((state) => state.toggleSound);
-  const setHandSortMode = useSettingsStore((state) => state.setHandSortMode);
   const themeMode = useSettingsStore((state) => state.themeMode);
   const setThemeMode = useSettingsStore((state) => state.setThemeMode);
 
@@ -60,13 +59,12 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
   // Check if any modal is open
   const hasModalOpen = showHowToPlay || wildcardPositionPrompt || meldWildcardPositionPrompt;
 
-  // Sorting shares one implementation with the sort buttons, and sets the same
-  // sticky mode so R / S keep working across deals.
+  // Sorting shares one implementation with the sort buttons. Like them it is a
+  // one-shot action - it does not stick, so a hand arranged by hand stays put.
   const applySort = useCallback((mode: HandSortMode) => {
     if (!myHand || myHand.length === 0) return;
-    setHandSortMode(mode);
     reorderHand(sortHand(myHand, mode).map(c => c.id));
-  }, [myHand, reorderHand, setHandSortMode]);
+  }, [myHand, reorderHand]);
 
   const handleSortByRank = useCallback(() => applySort('rank'), [applySort]);
   const handleSortBySuit = useCallback(() => applySort('suit'), [applySort]);

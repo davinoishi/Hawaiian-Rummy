@@ -2,7 +2,7 @@
  * PlayerHand - Displays the player's hand of cards
  */
 
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback } from 'react';
 import { Card } from './Card';
 import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { useCardSelection, usePlayerActions, useHaptics } from '../../hooks';
@@ -13,8 +13,6 @@ export function PlayerHand() {
   const isMyTurn = useGameStore((state) => state.isMyTurn);
   const focusedCardIndex = useUIStore((state) => state.focusedCardIndex);
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
-  const sortMode = useSettingsStore((state) => state.handSortMode);
-  const setSortMode = useSettingsStore((state) => state.setHandSortMode);
   const isLight = resolvedTheme === 'light';
   const {
     selectedCardIds,
@@ -49,35 +47,16 @@ export function PlayerHand() {
     reorderHand(newHand.map(c => c.id));
   }, [myHand, reorderHand]);
 
-  // Keep a sticky sort applied as the hand changes, so a new deal, a draw, or a
-  // won buy all land in order instead of making the player re-sort every round.
-  // sortHand is idempotent, so once the server echoes the sorted order back this
-  // stops firing rather than looping.
-  const sortedIds = useMemo(
-    () => sortHand(myHand, sortMode).map(c => c.id),
-    [myHand, sortMode]
-  );
-
-  useEffect(() => {
-    if (sortMode === 'none' || myHand.length === 0) return;
-
-    const isAlreadySorted = myHand.every((card, i) => card.id === sortedIds[i]);
-    if (!isAlreadySorted) {
-      reorderHand(sortedIds);
-    }
-  }, [myHand, sortMode, sortedIds, reorderHand]);
-
-  // Sort buttons toggle their mode off, so a player can drop back to a manual
-  // arrangement without losing the ability to drag cards around.
+  // Sorting is a one-shot action, deliberately. An earlier version kept a
+  // sticky sort and re-applied it whenever the hand changed, which made manual
+  // arrangement impossible: a dragged card was reordered by the server, echoed
+  // back, and immediately sorted away again. In later rounds players group
+  // their hand into prospective sets and runs by hand, and that grouping has to
+  // survive a draw.
   const handleSort = useCallback((mode: HandSortMode) => {
     tap();
-    const next = sortMode === mode ? 'none' : mode;
-    setSortMode(next);
-
-    if (next !== 'none') {
-      reorderHand(sortHand(myHand, next).map(c => c.id));
-    }
-  }, [myHand, sortMode, setSortMode, reorderHand, tap]);
+    reorderHand(sortHand(myHand, mode).map(c => c.id));
+  }, [myHand, reorderHand, tap]);
 
   if (!myHand || myHand.length === 0) {
     return (
@@ -91,13 +70,6 @@ export function PlayerHand() {
     focusedCardIndex >= 0 && focusedCardIndex < myHand.length
       ? myHand[focusedCardIndex]?.id ?? null
       : null;
-
-  const sortButtonClass = (mode: HandSortMode) =>
-    `btn-ghost px-3 py-1 text-sm ${
-      sortMode === mode
-        ? `ring-2 ring-yellow-400 ${isLight ? 'text-amber-800 bg-amber-100' : 'text-yellow-200 bg-yellow-500/20'}`
-        : ''
-    }`;
 
   return (
     <div className="space-y-4">
@@ -188,23 +160,18 @@ export function PlayerHand() {
       <div className="flex gap-2 items-center">
         <button
           onClick={() => handleSort('rank')}
-          className={sortButtonClass('rank')}
-          title="Keep your hand sorted by rank"
+          className="btn-ghost px-3 py-1 text-sm"
+          title="Sort your hand by rank now"
         >
           Sort by Rank
         </button>
         <button
           onClick={() => handleSort('suit')}
-          className={sortButtonClass('suit')}
-          title="Keep your hand sorted by suit"
+          className="btn-ghost px-3 py-1 text-sm"
+          title="Sort your hand by suit now"
         >
           Sort by Suit
         </button>
-        {sortMode !== 'none' && (
-          <span className={`text-xs ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
-            auto-sorting
-          </span>
-        )}
       </div>
     </div>
   );

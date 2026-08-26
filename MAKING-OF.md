@@ -563,3 +563,97 @@ washed-out melds, and the translucent buy prompt (both this session).
   lists tournaments as a future enhancement and describes a client build step that does
   not match `vite.config.ts`, and `AI_IMPLEMENTATION.md` names AI players that no longer
   exist. That is probably the cheapest remaining win in the repo.
+
+---
+
+## Session 4 — 2026-08-26 — Correction to session 2: the sticky sort was wrong
+
+Davin, testing the branch, asked why auto-sorting was enabled at all: *"later in the
+game when players need sets and runs, auto-sort is harder to organize the cards. The
+sort should be manual."*
+
+He is right, and the problem is worse than a preference call.
+
+### The two features I shipped were fighting each other
+
+Session 2 delivered **both** a working mobile drag-to-reorder (item #3) **and** a sticky
+sort that re-applied itself on every hand change (item #5). They are mutually exclusive
+by construction, and I never tested them together:
+
+1. Drag a card → `reorderHand(newOrder)` goes to the server
+2. Server echoes the new hand order back
+3. The sticky-sort effect sees the order differs from sorted → emits `reorderHand(sortedIds)`
+4. The card snaps back
+
+Measured on the branch as shipped, with `handSortMode: 'rank'`:
+
+```
+before drag : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+right after : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+2s later    : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+dragged card A♦2: index 0 -> 0     DRAG PERSISTED: false   SNAPPED BACK: true
+```
+
+So the headline fix of session 2 — mobile card reordering, which I verified extensively
+and reported as working — was **dead on arrival for anyone with a sort mode enabled**.
+Both of my session 2 verifications were real and both passed; neither exercised the
+interaction. The drag test ran with sorting off, the sort test never dragged.
+
+### WRONG PREMISE: item #5 itself
+
+Session 1 recorded the problem as *"Hands are dealt unsorted every round and sort isn't
+sticky... Every round starts with a manual 'Sort by Rank'."* That framing assumed sorted
+is the state a player wants to be in, and that re-sorting is friction.
+
+That is wrong for this game. Round 10 is "3 runs of 5" against a 15-card hand: players
+group their cards into prospective melds by hand, and that grouping is *information* —
+it has to survive a draw. A rank sort actively destroys it, and doing so automatically
+destroys it without asking. The friction I "fixed" was the player expressing a
+preference, and the fix overrode the preference.
+
+Worth noting how the mistake was invisible from inside the work: every measurement in
+session 2 was about whether the sort *worked*, and it did — it sorted the deal, it
+sorted the draw, it persisted, it did not loop. Nothing I measured could have told me
+that sorting the draw was the wrong thing to do. That needed someone who plays the game.
+
+### The fix
+
+Sorting is now a one-shot action, as it was before session 2, and nothing else:
+
+- Deleted the re-apply effect from `PlayerHand`.
+- Removed `handSortMode` from `settings-store` entirely — there is no mode to persist.
+  A stale `handSortMode` left in a returning player's localStorage is simply ignored.
+- Sort buttons are plain actions again: no active ring, no "auto-sorting" label, no
+  toggle-off behaviour.
+- `R` / `S` shortcuts likewise sort once.
+
+Kept from session 2: the shared `sortHand()` helper (three hand-rolled copies collapsed
+into one), the removal of the dead `useMemo` sort state, and the working touch drag —
+which is the point, since it now actually works.
+
+### Verification (all actually run)
+
+Same harness, after the change:
+
+```
+1. sort buttons still work (one-shot)
+   before:            K Q 2 K 10 Joker 8 6 K   sorted=false
+   after Sort by Rank: Joker 2 6 8 10 Q K K K  sorted=true
+   no "auto-sorting" label: true
+2. a manual drag survives
+   arranged: 2 6 8 10 Q Joker K K K   (deliberately not sorted: true)
+3. drawing a card does NOT re-sort the arrangement
+   after draw: 2 6 8 10 Q Joker K K K 7
+   drew 7♠0 -> index 9 of 10          ARRANGEMENT PRESERVED: true
+```
+
+And the drag test that failed above now reports `index 0 -> 5, DRAG PERSISTED: true`,
+with the hand left unsorted despite a seeded `handSortMode: 'rank'` in localStorage.
+
+### The lesson worth keeping
+
+Two features that each pass their own tests can still be mutually exclusive. Session 2
+shipped a reordering feature and an auto-reordering feature on the same array on the same
+day and tested them in separate harnesses. The cheap check that would have caught it —
+"turn on feature A, then use feature B" — took about four minutes to write once someone
+pointed at it.
