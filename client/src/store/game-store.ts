@@ -126,6 +126,7 @@ const initialState = {
   buyWindowActive: false,
   buyWindowRemaining: 0,
   buyJustProcessed: false,
+  turnTimeRemaining: 0,
   tutorialMode: false,
   tutorialStep: 0,
 };

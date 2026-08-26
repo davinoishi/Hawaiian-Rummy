@@ -287,6 +287,11 @@ export interface ClientGameState {
   buyWindowRemaining: number;
   buyJustProcessed: boolean;
 
+  // Idle-turn timer. Seconds left before the server auto-plays the current
+  // player's turn, or 0 when the timer does not apply (AI turn, disconnected
+  // player, or the game is not in a playable phase).
+  turnTimeRemaining: number;
+
   // Tutorial
   tutorialMode: boolean;
   tutorialStep: number;

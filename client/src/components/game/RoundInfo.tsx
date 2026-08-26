@@ -2,7 +2,7 @@
  * RoundInfo - Displays current round and requirements
  */
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore, useSettingsStore, useGameStore } from '../../store';
 import { useProfileStore } from '../../store/profile-store';
@@ -10,7 +10,10 @@ import { useSocketStore } from '../../store/socket-store';
 import { useTournamentStore } from '../../store/tournament-store';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { useNavigate } from 'react-router-dom';
+import { TURN_IDLE_WARNING } from '@shared/game-engine/constants';
 import type { RoundRequirement } from '@shared/game-engine/types';
+
+const TURN_WARNING_SEC = TURN_IDLE_WARNING / 1000;
 
 interface RoundInfoProps {
   round: number;
@@ -30,6 +33,23 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const isLight = resolvedTheme === 'light';
 
   const { players, roomId, tutorialMode } = useGameStore();
+  const turnTimeRemaining = useGameStore((state) => state.turnTimeRemaining) ?? 0;
+
+  // The server only sends turnTimeRemaining on a broadcast, and an idle turn
+  // produces no broadcasts - so count down locally from the last value we saw.
+  const [localTurnTime, setLocalTurnTime] = useState(turnTimeRemaining);
+
+  useEffect(() => {
+    setLocalTurnTime(turnTimeRemaining);
+    if (turnTimeRemaining <= 0) return;
+
+    const interval = setInterval(() => {
+      setLocalTurnTime((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [turnTimeRemaining]);
+
+  const showTurnWarning = isMyTurn && localTurnTime > 0 && localTurnTime <= TURN_WARNING_SEC;
   const { profileId } = useProfileStore();
   const { emit, clearGameSession } = useSocketStore();
   const reset = useGameStore((state) => state.reset);
@@ -109,8 +129,15 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
               : `Round ${round}`}
           </span>
           {isMyTurn && (
-            <span className="text-xs bg-yellow-500 text-yellow-900 px-2 py-1 rounded-full font-medium">
-              Your Turn
+            <span
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                showTurnWarning
+                  ? 'bg-red-500 text-white animate-pulse'
+                  : 'bg-yellow-500 text-yellow-900'
+              }`}
+              title={showTurnWarning ? 'Your turn will be auto-played when this runs out' : undefined}
+            >
+              {showTurnWarning ? `Your Turn - ${localTurnTime}s` : 'Your Turn'}
             </span>
           )}
         </div>

@@ -2,7 +2,7 @@
  * DiscardPile - Shows the discard pile and allows taking/dropping cards
  */
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import { Card } from './Card';
 import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useHaptics } from '../../hooks';
@@ -13,38 +13,23 @@ interface DiscardPileProps {
 }
 
 export function DiscardPile({ topCard }: DiscardPileProps) {
-  const { canTakeDiscard, isMyTurn, gamePhase, buyWindowActive, buyWindowRemaining } = useGameStore();
+  const { canTakeDiscard, isMyTurn, gamePhase, discardPile } = useGameStore();
   const { dragOverDiscard, setDragOverDiscard, discardAnimation } = useUIStore();
   const { takeDiscard, discard } = usePlayerActions();
   const { tap, cardDrop } = useHaptics();
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const isLight = resolvedTheme === 'light';
 
-  // Track local buy window state with a countdown timer
-  const [localBuyWindowExpired, setLocalBuyWindowExpired] = useState(false);
-
-  // When buy window state changes from server, reset local state
-  useEffect(() => {
-    if (buyWindowActive && (buyWindowRemaining ?? 0) > 0) {
-      setLocalBuyWindowExpired(false);
-      // Set a timer to mark window as expired
-      const timer = setTimeout(() => {
-        setLocalBuyWindowExpired(true);
-      }, (buyWindowRemaining ?? 0) * 1000);
-      return () => clearTimeout(timer);
-    } else if (!buyWindowActive) {
-      setLocalBuyWindowExpired(true);
-    }
-  }, [buyWindowActive, buyWindowRemaining]);
-
-  // Calculate if we can interact - use local window tracking
-  const canInteractLocal = isMyTurn && gamePhase === 'draw' && (canTakeDiscard || localBuyWindowExpired);
+  // The server re-broadcasts when the buy window closes, so canTakeDiscard is
+  // authoritative here - no local expiry timer needed.
+  const canInteract = canTakeDiscard ?? false;
+  const pileSize = discardPile?.length ?? 0;
 
   const handleClick = useCallback(() => {
-    if (!canInteractLocal) return;
+    if (!canInteract) return;
     tap();
     takeDiscard();
-  }, [canInteractLocal, tap, takeDiscard]);
+  }, [canInteract, tap, takeDiscard]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -56,11 +41,11 @@ export function DiscardPile({ topCard }: DiscardPileProps) {
     setDragOverDiscard(false);
   }, [isMyTurn, gamePhase, cardDrop, discard, setDragOverDiscard]);
 
-  const canInteract = canInteractLocal;
-
   return (
     <div className="flex flex-col items-center gap-2">
-      <span className={`text-xs ${isLight ? 'text-emerald-800' : 'text-emerald-300'} font-medium`}>Discard</span>
+      <span className={`text-xs ${isLight ? 'text-emerald-800' : 'text-emerald-300'} font-medium`}>
+        Discard{pileSize > 0 ? ` (${pileSize})` : ''}
+      </span>
 
       <div
         className={`

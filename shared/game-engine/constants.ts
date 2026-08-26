@@ -23,6 +23,15 @@ export const BUY_WINDOW_DURATION = 5000; // 5 seconds for buy window
 
 export const AI_DECISION_DELAY = 1500; // 1.5 second delay for AI thinking
 
+// How long a connected player may sit idle on their turn before the server
+// auto-plays it for them. Prevents an AFK-but-connected player from stalling
+// the table indefinitely (disconnects are handled separately by
+// DISCONNECT_GRACE_PERIOD in server/game-manager.ts).
+export const TURN_IDLE_TIMEOUT = 120000; // 2 minutes of inactivity
+
+// When the remaining idle time drops below this, the client shows a countdown.
+export const TURN_IDLE_WARNING = 30000; // last 30 seconds
+
 // ===== PLAYER CONSTANTS =====
 
 export const MAX_PLAYERS = 4;

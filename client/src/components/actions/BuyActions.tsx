@@ -3,10 +3,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useGameStore, useUIStore, useSettingsStore } from '../../store';
+import { useGameStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useAudio, useHaptics } from '../../hooks';
+import { BUY_WINDOW_DURATION } from '@shared/game-engine/constants';
 
-const BUY_WINDOW_DURATION_SEC = 5; // 5 seconds total
+const BUY_WINDOW_DURATION_SEC = BUY_WINDOW_DURATION / 1000;
 
 export function BuyActions() {
   const {
@@ -68,12 +69,16 @@ export function BuyActions() {
     cancelBuy();
   };
 
+  if (!buyWindowActive || localRemaining <= 0) {
+    return null;
+  }
+
   return (
     <div className="panel p-4 animate-slide-up">
       <div className="flex flex-col items-center gap-3">
         {/* Timer */}
         <div className="flex items-center gap-2">
-          <div className={`w-full h-2 ${isLight ? 'bg-emerald-200' : 'bg-emerald-800'} rounded-full overflow-hidden`} style={{ width: '120px' }}>
+          <div className={`w-[120px] h-2 ${isLight ? 'bg-emerald-200' : 'bg-emerald-800'} rounded-full overflow-hidden`}>
             <div
               className={`h-full ${isLight ? 'bg-amber-500' : 'bg-yellow-500'} transition-all duration-100`}
               style={{ width: `${(localRemaining / BUY_WINDOW_DURATION_SEC) * 100}%` }}
