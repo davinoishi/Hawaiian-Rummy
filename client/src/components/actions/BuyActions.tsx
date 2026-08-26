@@ -74,7 +74,7 @@ export function BuyActions() {
   }
 
   return (
-    <div className="panel p-4 animate-slide-up">
+    <div className="panel panel-solid p-4 animate-slide-up shadow-2xl">
       <div className="flex flex-col items-center gap-3">
         {/* Timer */}
         <div className="flex items-center gap-2">

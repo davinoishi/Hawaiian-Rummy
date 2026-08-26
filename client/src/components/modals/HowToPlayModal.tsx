@@ -206,7 +206,7 @@ export function HowToPlayModal() {
                 <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">U</kbd>
               </div>
               <div className="flex justify-between">
-                <span>Auto meld (3=set, 4+=run)</span>
+                <span>Auto meld (detects set or run)</span>
                 <kbd className="px-1.5 py-0.5 bg-gray-200 rounded text-xs font-mono">M</kbd>
               </div>
               <div className="flex justify-between">

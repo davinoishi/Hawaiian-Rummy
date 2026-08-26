@@ -81,7 +81,7 @@ export function PlayerHand() {
 
   if (!myHand || myHand.length === 0) {
     return (
-      <div className="p-4 text-center text-emerald-200">
+      <div className={`p-4 text-center ${isLight ? 'text-emerald-800' : 'text-emerald-200'}`}>
         No cards in hand
       </div>
     );
@@ -179,7 +179,7 @@ export function PlayerHand() {
         >
           {(() => {
             const card = myHand.find(c => c.id === touchDraggedCardId);
-            return card ? <Card card={card} isDisabled /> : null;
+            return card ? <Card card={card} readOnly /> : null;
           })()}
         </div>
       )}

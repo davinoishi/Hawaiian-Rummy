@@ -418,3 +418,148 @@ CI" note from session 1 is worse than recorded: there is no lint locally either.
 `sortCardsBySuit()` in `card-utils.ts` has zero callers. It was already dead before this
 session (the old code hand-rolled its own suit grouping rather than calling it); left in
 place rather than widening this change.
+
+---
+
+## Session 3 — 2026-08-26 — The polish group, and two defects the screenshots caught
+
+Final group from the session 1 review: items 7, 9, 10, 11, 12, 13.
+
+### What shipped
+
+**#13 was already done.** The discard pile count shipped as part of group 1+2 in session 1
+(`Discard (3)`, matching the deck's `Deck (125)`). Verified rather than re-implemented.
+
+**#7 Requirement progress.** `RoundInfo` showed `Goal: 3 sets of 3 and a run of 5` and
+nothing else until the whole requirement was met. It now appends live counts —
+`Goal: 2 sets of 3 (0/2 sets)` — derived from `getMeldsNeeded()`, which had been sitting
+in `validation/requirements.ts:97` written and unused since it was added.
+
+**#9 Disabled buttons now say why.** Create Set / Create Run / Discard were greyed with
+no explanation. Each now carries a `title` naming the blocker, and — because a `title`
+never appears on a touch device — the single most relevant reason is rendered inline
+under the buttons: *"Draw from the deck or take the discard to start your turn."*
+becoming *"Tap cards to select them, then create a meld or discard."* once you have
+drawn. Also deleted `canLayoff`, a computed variable nothing referenced.
+
+**#10 The `M` shortcut was genuinely wrong, not just inelegant.** It chose the meld type
+by counting cards: `selectedCardIds.length === 3 ? 'set' : 'run'`. Round 7 requires
+**3 sets of 4**, so pressing `M` on a legitimate four-of-a-kind tried to build a run and
+failed. Replaced with `detectMeldType()` in `card-utils`, which decides from the cards:
+if the non-wild cards all share a rank it is a set, otherwise a run. `HowToPlayModal`
+documented the buggy behaviour as if intended ("Auto meld (3=set, 4+=run)") and was
+corrected too.
+
+**#11 MeldArea was dark-theme only**, while every sibling component branched on
+`isLight`. Measured contrast ratios for the classes as they actually rendered on the
+light theme, versus after:
+
+| element | before | after |
+|---|---|---|
+| "X's Melds" heading (`text-emerald-200` on `emerald-50`) | **1.22:1** | 7.29:1 |
+| SET/RUN badge (`text-blue-200` on `bg-blue-500/30`) | **1.10:1** | 7.15:1 |
+| "3 cards" count (`text-emerald-300` on meld group) | **1.34:1** | 4.84:1 |
+
+WCAG AA for normal text is 4.5:1. 1.10:1 is, for practical purposes, invisible — light
+theme players have not been able to read the SET/RUN labels at all. Before-figures
+computed from the Tailwind palette values; after-figures measured with
+`getComputedStyle` in the running app.
+
+**#12 The haptics toggle was missing, and the reason was worse than it looked.** The
+plan was "add a switch to SettingsPanel". But `useHaptics` held the preference in its own
+`useState`:
+
+```ts
+const [enabled, setEnabledState] = useState(getSavedHapticsState);
+```
+
+`useHaptics()` is called from about a dozen components, and each call creates its own
+copy of that state. A toggle wired to SettingsPanel's copy would have flipped the switch,
+written localStorage, and **changed nothing** — every other component would have kept
+vibrating until a reload. Moved the flag into `settings-store` (one shared zustand store,
+same shape as the sound setting) and pointed `useHaptics` at it. Kept the legacy
+`hawaiianRummy_haptics` localStorage key rather than folding it into the settings blob,
+so nobody loses a preference they already set. The switch only renders where
+`navigator.vibrate` exists.
+
+### Two defects the screenshots caught that no test would have
+
+Both found by actually looking at a full-page screenshot of the running game, not by any
+assertion.
+
+**Melded cards were washed out.** `MeldArea` passed `isDisabled` to `Card` to make melds
+non-interactive, but `isDisabled` also applies `card-disabled` → `opacity-50`. That is
+right for "you can't play this right now" and wrong for cards on the table: you need to
+read opponents' melds to plan layoffs, and at 50% opacity on a light background they were
+barely legible. Added a `readOnly` prop to `Card` that blocks the click and the
+hover-lift but leaves the card at full opacity, and used it for melds and for the touch
+drag ghost (which had been 0.5 × 0.8 = 0.4 opacity).
+
+**The pinned buy prompt from session 1 was translucent.** `.panel` is
+`rgba(209,250,229,0.85)` in light and `bg-emerald-800/90` in dark — fine for a panel in
+the page flow, wrong for one pinned above the board. The screenshot showed the action
+bar's "Waiting for your turn…" reading straight through the middle of "Buy this card?".
+This was a defect I introduced in session 1 and did not notice, because session 1's
+verification was socket-level and never looked at the screen. Added a `.panel-solid`
+modifier (specificity-matched to beat the themed `.panel` rules) and applied it to the
+buy prompt. Now measured `rgb(236, 253, 245)` — no alpha channel at all.
+
+The lesson worth keeping: session 1 verified the buy prompt's *behaviour* (it opens, it
+expires, it is pinned to the bottom) and every one of those assertions passed while the
+thing was visually broken. Screenshots are not decoration.
+
+### Verification (all actually run)
+
+`detectMeldType` unit check via `tsx`, 6/6:
+
+```
+PASS  4-card set (round 7!)    -> set     PASS  3-card set          -> set
+PASS  4-card run               -> run     PASS  3 cards + wild      -> run
+PASS  set with a wild          -> set     PASS  all wild (ambiguous)-> set
+```
+
+Live game, Chromium/Playwright, Pixel 5, **light theme** (so #11 is exercised):
+
+```
+#7  goal line: "Goal: 2 sets of 3(0/2 sets)"   shows progress counts: true
+#9  hint before drawing: "Draw from the deck or take the discard to start your turn."
+    Create Set (3+) => "Draw a card first" (disabled=true)
+    Create Run (4+) => "Draw a card first" (disabled=true)
+    Discard         => "Draw a card first" (disabled=true)
+    after drawing:  "Tap cards to select them, then create a meld or discard."
+    Discard         => "Select a card to discard" disabled=true
+#11 heading 7.29:1 · badge 7.15:1 · card count 4.84:1  (theme=light)
+#12 Haptics section visible: true
+    aria-checked true -> false, localStorage hawaiianRummy_haptics: "false"
+buy prompt: bg rgb(236,253,245) opaque=true pinnedToBottom=true topElementIsPanel=true
+```
+
+The `#11` check needed melds on the table, which meant driving real turns — the harness
+auto-plays (draw, select last card, discard) until a `.meld-group` appears. Took one turn
+before an AI melded.
+
+Both typechecks clean, both builds succeed.
+
+**Assumed, not verified:** the `M` shortcut's *wiring* was not exercised end-to-end in a
+browser — that would need a hand containing a natural four-of-a-kind. The decision logic
+is unit-tested 6/6 and the wiring is two lines (`myHand.filter(...)` then
+`createMeld(detectMeldType(selected))`).
+
+### Review scoreboard
+
+All 18 items from the session 1 review are now closed across sessions 1–3, plus five
+things found along the way that were not on the list: the chat button covering the hand
+(session 2), the dead `preventDefault` (session 2), the idle-clock scope bug (session 2),
+washed-out melds, and the translucent buy prompt (both this session).
+
+### Still open
+
+- Deck/discard hint labels (`-bottom-6`) sit under the player panel on a phone. Cosmetic.
+- `public/sw.js` `CACHE_NAME` is a permanent `'hawaiian-rummy-v1'`.
+- `client/` has no ESLint config, so `npm run lint` has never worked.
+- `sortCardsBySuit()` in `card-utils.ts` has no callers.
+- Documentation drift catalogued in session 1 is still entirely unaddressed: both
+  `package.json`s say `2.0.0` for a v2.5.0 game, CHANGELOG has no v2.5.0 entry, README
+  lists tournaments as a future enhancement and describes a client build step that does
+  not match `vite.config.ts`, and `AI_IMPLEMENTATION.md` names AI players that no longer
+  exist. That is probably the cheapest remaining win in the repo.

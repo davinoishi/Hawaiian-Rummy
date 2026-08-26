@@ -12,6 +12,13 @@ interface CardProps {
   isHighlighted?: boolean;
   isDragging?: boolean;
   isDisabled?: boolean;
+  /**
+   * Non-interactive but fully legible - for cards already on the table.
+   * isDisabled dims to 50% opacity, which is right for "you can't play this
+   * right now" but wrong for melds, since players need to read opponents'
+   * melds to plan layoffs.
+   */
+  readOnly?: boolean;
   showBack?: boolean;
   size?: 'sm' | 'md' | 'lg';
   onClick?: () => void;
@@ -36,6 +43,7 @@ function CardComponent({
   isHighlighted = false,
   isDragging = false,
   isDisabled = false,
+  readOnly = false,
   showBack = false,
   size = 'md',
   onClick,
@@ -49,10 +57,10 @@ function CardComponent({
   const { tap } = useHaptics();
 
   const handleClick = useCallback(() => {
-    if (isDisabled || showBack) return;
+    if (isDisabled || readOnly || showBack) return;
     tap();
     onClick?.();
-  }, [isDisabled, showBack, tap, onClick]);
+  }, [isDisabled, readOnly, showBack, tap, onClick]);
 
   // Size classes
   const sizeClasses = {
@@ -87,7 +95,7 @@ function CardComponent({
     isDisabled && 'card-disabled',
     isWild && 'card-wildcard',
     isJoker && 'card-joker',
-    !isDisabled && !showBack && 'cursor-pointer hover:-translate-y-1',
+    !isDisabled && !readOnly && !showBack && 'cursor-pointer hover:-translate-y-1',
     className
   ].filter(Boolean).join(' ');
 

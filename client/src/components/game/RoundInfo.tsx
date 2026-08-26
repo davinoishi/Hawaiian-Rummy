@@ -11,6 +11,7 @@ import { useTournamentStore } from '../../store/tournament-store';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { useNavigate } from 'react-router-dom';
 import { TURN_IDLE_WARNING } from '@shared/game-engine/constants';
+import { getMeldsNeeded } from '@shared/game-engine/validation/requirements';
 import type { RoundRequirement } from '@shared/game-engine/types';
 
 const TURN_WARNING_SEC = TURN_IDLE_WARNING / 1000;
@@ -33,6 +34,8 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const isLight = resolvedTheme === 'light';
 
   const { players, roomId, tutorialMode, unreadChatCount } = useGameStore();
+  const myMelds = useGameStore((state) => state.myMelds);
+  const currentRound = useGameStore((state) => state.currentRound) ?? 0;
   const setChatOpen = useGameStore((state) => state.setChatOpen);
   const turnTimeRemaining = useGameStore((state) => state.turnTimeRemaining) ?? 0;
 
@@ -51,6 +54,16 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   }, [turnTimeRemaining]);
 
   const showTurnWarning = isMyTurn && localTurnTime > 0 && localTurnTime <= TURN_WARNING_SEC;
+
+  // Progress toward the round goal. The goal line was binary until met, which
+  // gave no sense of how far along you were in a 4-meld round.
+  const needed = getMeldsNeeded(myMelds ?? [], currentRound);
+  const setsDone = (requirement?.sets ?? 0) - needed.setsNeeded;
+  const runsDone = (requirement?.runs ?? 0) - needed.runsNeeded;
+  const progressParts = [
+    (requirement?.sets ?? 0) > 0 ? `${setsDone}/${requirement.sets} sets` : null,
+    (requirement?.runs ?? 0) > 0 ? `${runsDone}/${requirement.runs} runs` : null
+  ].filter(Boolean);
   const { profileId } = useProfileStore();
   const { emit, clearGameSession } = useSocketStore();
   const reset = useGameStore((state) => state.reset);
@@ -156,7 +169,18 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
             </svg>
           )}
           <span>
-            {hasMetRequirements ? 'Requirements Met!' : `Goal: ${requirement?.description || ''}`}
+            {hasMetRequirements
+              ? 'Requirements Met!'
+              : (
+                <>
+                  Goal: {requirement?.description || ''}
+                  {progressParts.length > 0 && (
+                    <span className={`ml-2 font-medium ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                      ({progressParts.join(' · ')})
+                    </span>
+                  )}
+                </>
+              )}
           </span>
         </div>
 

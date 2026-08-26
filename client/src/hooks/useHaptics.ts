@@ -2,7 +2,8 @@
  * useHaptics - Hook for vibration feedback on mobile devices
  */
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState } from 'react';
+import { useSettingsStore } from '../store/settings-store';
 
 // Vibration patterns (durations in milliseconds)
 const PATTERNS = {
@@ -46,40 +47,14 @@ const isVibrationSupported = (): boolean => {
   return typeof navigator !== 'undefined' && 'vibrate' in navigator;
 };
 
-// Get saved preference from localStorage
-const getSavedHapticsState = (): boolean => {
-  try {
-    const saved = localStorage.getItem('hawaiianRummy_haptics');
-    // Default to true if not set and supported
-    return saved === null ? isVibrationSupported() : saved === 'true';
-  } catch {
-    return isVibrationSupported();
-  }
-};
-
-// Save preference to localStorage
-const saveHapticsState = (enabled: boolean): void => {
-  try {
-    localStorage.setItem('hawaiianRummy_haptics', String(enabled));
-  } catch {
-    // Ignore localStorage errors
-  }
-};
-
 export function useHaptics() {
-  const [enabled, setEnabledState] = useState(getSavedHapticsState);
+  // The preference lives in the settings store, not in local state: this hook
+  // is called from a dozen components, and a useState here would give each of
+  // them a private copy that a settings toggle could never reach.
+  const enabled = useSettingsStore((state) => state.hapticsEnabled);
+  const setEnabled = useSettingsStore((state) => state.setHapticsEnabled);
+  const toggleEnabled = useSettingsStore((state) => state.toggleHaptics);
   const [supported] = useState(isVibrationSupported);
-
-  // Set enabled state
-  const setEnabled = useCallback((value: boolean) => {
-    setEnabledState(value);
-    saveHapticsState(value);
-  }, []);
-
-  // Toggle enabled state
-  const toggleEnabled = useCallback(() => {
-    setEnabled(!enabled);
-  }, [enabled, setEnabled]);
 
   // Play a vibration pattern
   const vibrate = useCallback((pattern: PatternName | number | number[]) => {

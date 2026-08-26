@@ -128,6 +128,25 @@ export function sortHand(cards: Card[], mode: HandSortMode): Card[] {
 }
 
 /**
+ * Infer whether a group of selected cards is a set or a run.
+ *
+ * Sets are same-rank, runs are same-suit sequences, so the non-wild cards
+ * decide it: if they all share a rank it is a set, otherwise a run. Card
+ * *count* cannot decide this - round 7 requires "3 sets of 4", so a 4-card
+ * selection is just as likely to be a set as a run.
+ *
+ * An all-wild selection is genuinely ambiguous; it reports 'set' so the caller
+ * has something to send, and the server's validator has the final say.
+ */
+export function detectMeldType(cards: Card[]): 'set' | 'run' {
+  const nonWild = cards.filter(card => !isWildcard(card));
+  if (nonWild.length === 0) return 'set';
+
+  const allSameRank = nonWild.every(card => card.rank === nonWild[0].rank);
+  return allSameRank ? 'set' : 'run';
+}
+
+/**
  * Calculate total points in a hand
  * @param hand - Array of cards
  * @returns Total point value

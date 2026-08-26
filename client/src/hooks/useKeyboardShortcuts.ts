@@ -5,7 +5,7 @@
 import { useEffect, useCallback } from 'react';
 import { useGameStore, useUIStore, useSettingsStore } from '../store';
 import { usePlayerActions } from './usePlayerActions';
-import { sortHand, type HandSortMode } from '@shared/game-engine/card-utils';
+import { sortHand, detectMeldType, type HandSortMode } from '@shared/game-engine/card-utils';
 
 interface UseKeyboardShortcutsProps {
   onOpenSettings?: () => void;
@@ -161,11 +161,13 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
           break;
 
         case 'm':
-          // Create meld (auto-detect type based on count: 3 = set, 4+ = run)
-          if (isMyTurn && selectedCardIds.length >= 3 && !canDraw) {
+          // Create meld, inferring the type from the cards themselves.
+          // Card count cannot decide this: round 7 requires "3 sets of 4", so a
+          // 4-card selection is as likely to be a set as a run.
+          if (isMyTurn && selectedCardIds.length >= 3 && !canDraw && myHand) {
             e.preventDefault();
-            const meldType = selectedCardIds.length === 3 ? 'set' : 'run';
-            createMeld(meldType);
+            const selected = myHand.filter(card => selectedCardIds.includes(card.id));
+            createMeld(detectMeldType(selected));
           }
           break;
 
