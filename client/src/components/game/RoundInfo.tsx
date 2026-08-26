@@ -2,7 +2,7 @@
  * RoundInfo - Displays current round and requirements
  */
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useUIStore, useSettingsStore, useGameStore } from '../../store';
 import { useProfileStore } from '../../store/profile-store';
@@ -10,7 +10,11 @@ import { useSocketStore } from '../../store/socket-store';
 import { useTournamentStore } from '../../store/tournament-store';
 import { SettingsPanel } from '../ui/SettingsPanel';
 import { useNavigate } from 'react-router-dom';
+import { TURN_IDLE_WARNING } from '@shared/game-engine/constants';
+import { getMeldsNeeded } from '@shared/game-engine/validation/requirements';
 import type { RoundRequirement } from '@shared/game-engine/types';
+
+const TURN_WARNING_SEC = TURN_IDLE_WARNING / 1000;
 
 interface RoundInfoProps {
   round: number;
@@ -29,7 +33,37 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
   const resolvedTheme = useSettingsStore((state) => state.resolvedTheme);
   const isLight = resolvedTheme === 'light';
 
-  const { players, roomId, tutorialMode } = useGameStore();
+  const { players, roomId, tutorialMode, unreadChatCount } = useGameStore();
+  const myMelds = useGameStore((state) => state.myMelds);
+  const currentRound = useGameStore((state) => state.currentRound) ?? 0;
+  const setChatOpen = useGameStore((state) => state.setChatOpen);
+  const turnTimeRemaining = useGameStore((state) => state.turnTimeRemaining) ?? 0;
+
+  // The server only sends turnTimeRemaining on a broadcast, and an idle turn
+  // produces no broadcasts - so count down locally from the last value we saw.
+  const [localTurnTime, setLocalTurnTime] = useState(turnTimeRemaining);
+
+  useEffect(() => {
+    setLocalTurnTime(turnTimeRemaining);
+    if (turnTimeRemaining <= 0) return;
+
+    const interval = setInterval(() => {
+      setLocalTurnTime((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [turnTimeRemaining]);
+
+  const showTurnWarning = isMyTurn && localTurnTime > 0 && localTurnTime <= TURN_WARNING_SEC;
+
+  // Progress toward the round goal. The goal line was binary until met, which
+  // gave no sense of how far along you were in a 4-meld round.
+  const needed = getMeldsNeeded(myMelds ?? [], currentRound);
+  const setsDone = (requirement?.sets ?? 0) - needed.setsNeeded;
+  const runsDone = (requirement?.runs ?? 0) - needed.runsNeeded;
+  const progressParts = [
+    (requirement?.sets ?? 0) > 0 ? `${setsDone}/${requirement.sets} sets` : null,
+    (requirement?.runs ?? 0) > 0 ? `${runsDone}/${requirement.runs} runs` : null
+  ].filter(Boolean);
   const { profileId } = useProfileStore();
   const { emit, clearGameSession } = useSocketStore();
   const reset = useGameStore((state) => state.reset);
@@ -109,8 +143,15 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
               : `Round ${round}`}
           </span>
           {isMyTurn && (
-            <span className="text-xs bg-yellow-500 text-yellow-900 px-2 py-1 rounded-full font-medium">
-              Your Turn
+            <span
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                showTurnWarning
+                  ? 'bg-red-500 text-white animate-pulse'
+                  : 'bg-yellow-500 text-yellow-900'
+              }`}
+              title={showTurnWarning ? 'Your turn will be auto-played when this runs out' : undefined}
+            >
+              {showTurnWarning ? `Your Turn - ${localTurnTime}s` : 'Your Turn'}
             </span>
           )}
         </div>
@@ -128,12 +169,39 @@ function RoundInfoComponent({ round, requirement, isMyTurn, hasMetRequirements }
             </svg>
           )}
           <span>
-            {hasMetRequirements ? 'Requirements Met!' : `Goal: ${requirement?.description || ''}`}
+            {hasMetRequirements
+              ? 'Requirements Met!'
+              : (
+                <>
+                  Goal: {requirement?.description || ''}
+                  {progressParts.length > 0 && (
+                    <span className={`ml-2 font-medium ${isLight ? 'text-emerald-900' : 'text-white'}`}>
+                      ({progressParts.join(' · ')})
+                    </span>
+                  )}
+                </>
+              )}
           </span>
         </div>
 
         {/* Help, Save, and Settings buttons */}
         <div className="flex items-center gap-1">
+          {/* Chat toggle - phones only. The floating chat button overlaps the
+              hand on a small screen, so it is docked here instead. */}
+          <button
+            onClick={() => setChatOpen(true)}
+            className="btn-ghost p-2 relative sm:hidden"
+            title="Chat"
+          >
+            <svg className={`w-5 h-5 ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            {(unreadChatCount ?? 0) > 0 && (
+              <span className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center bg-red-500 text-white text-[10px] rounded-full">
+                {(unreadChatCount ?? 0) > 9 ? '9+' : unreadChatCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setShowHowToPlay(true)}
             className="btn-ghost p-2"

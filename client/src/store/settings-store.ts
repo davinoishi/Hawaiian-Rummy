@@ -15,15 +15,46 @@ interface SettingsState {
   themeMode: ThemeMode;
   resolvedTheme: 'light' | 'dark'; // Actual theme after resolving 'auto'
 
+  // Vibration feedback on mobile. Lives here rather than inside useHaptics so
+  // that one toggle reaches every call site: useHaptics is called from a dozen
+  // components, and a useState inside it would give each its own copy.
+  hapticsEnabled: boolean;
+
   // Actions
   setSoundEnabled: (enabled: boolean) => void;
   setSoundVolume: (volume: number) => void;
   setThemeMode: (mode: ThemeMode) => void;
+  setHapticsEnabled: (enabled: boolean) => void;
+  toggleHaptics: () => void;
   toggleSound: () => void;
   initializeFromStorage: () => void;
 }
 
 const STORAGE_KEY = 'hawaiianRummy_settings';
+const HAPTICS_STORAGE_KEY = 'hawaiianRummy_haptics';
+
+function vibrationSupported(): boolean {
+  return typeof navigator !== 'undefined' && 'vibrate' in navigator;
+}
+
+// Haptics predates the settings blob and has always had its own key; keep
+// reading and writing it so existing players do not lose their choice.
+function loadHaptics(): boolean {
+  try {
+    const saved = localStorage.getItem(HAPTICS_STORAGE_KEY);
+    return saved === null ? vibrationSupported() : saved === 'true';
+  } catch {
+    return vibrationSupported();
+  }
+}
+
+function saveHaptics(enabled: boolean): void {
+  try {
+    localStorage.setItem(HAPTICS_STORAGE_KEY, String(enabled));
+  } catch {
+    // Ignore errors
+  }
+}
 
 // Get saved settings from localStorage
 function loadSettings(): Partial<SettingsState> {
@@ -78,7 +109,8 @@ const defaults = {
   soundEnabled: true,
   soundVolume: 0.5,
   themeMode: 'dark' as ThemeMode,
-  resolvedTheme: 'dark' as const
+  resolvedTheme: 'dark' as const,
+  hapticsEnabled: true
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -102,6 +134,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     saveSettings({ ...get(), themeMode: mode });
   },
 
+  setHapticsEnabled: (enabled) => {
+    set({ hapticsEnabled: enabled });
+    saveHaptics(enabled);
+  },
+
+  toggleHaptics: () => {
+    const newValue = !get().hapticsEnabled;
+    set({ hapticsEnabled: newValue });
+    saveHaptics(newValue);
+  },
+
   toggleSound: () => {
     const newValue = !get().soundEnabled;
     set({ soundEnabled: newValue });
@@ -119,6 +162,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       soundEnabled,
       soundVolume,
       themeMode,
+      hapticsEnabled: loadHaptics(),
       resolvedTheme: resolved
     });
 

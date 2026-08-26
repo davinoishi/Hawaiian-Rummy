@@ -2,7 +2,7 @@
  * GameBoard - Main game playing area
  */
 
-import { useGameStore, useUIStore, useSettingsStore, selectTopDiscard, selectOpponents } from '../../store';
+import { useGameStore, useSettingsStore, selectTopDiscard, selectOpponents } from '../../store';
 import { PlayerHand } from './PlayerHand';
 import { MeldArea } from './MeldArea';
 import { ActionBar } from '../actions/ActionBar';
@@ -75,11 +75,6 @@ export function GameBoard() {
           <DiscardPile topCard={topDiscard} />
         </div>
 
-        {/* Buy actions when buy window is active */}
-        {buyWindowActive && !isMyTurn && (
-          <BuyActions />
-        )}
-
         {/* My player section */}
         <div className="panel p-4 mt-auto">
           {/* My score */}
@@ -120,6 +115,16 @@ export function GameBoard() {
           <ActionBar />
         </div>
       </div>
+
+      {/* Buy prompt - pinned to the viewport so the 5-second window is never
+          scrolled out of view on a phone */}
+      {buyWindowActive && !isMyTurn && (
+        <div className="fixed inset-x-0 bottom-0 z-40 p-2 sm:p-4 pointer-events-none safe-area-inset-bottom">
+          <div className="max-w-md mx-auto pointer-events-auto">
+            <BuyActions />
+          </div>
+        </div>
+      )}
 
       {/* Chat panel */}
       <ChatPanel />

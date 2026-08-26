@@ -2,14 +2,11 @@
  * PlayerHand - Displays the player's hand of cards
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { Card } from './Card';
 import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { useCardSelection, usePlayerActions, useHaptics } from '../../hooks';
-import type { Card as CardType } from '@shared/game-engine/types';
-import { sortCardsByRank, groupByRank, groupBySuit } from '@shared/game-engine/card-utils';
-
-type SortMode = 'none' | 'rank' | 'suit';
+import { sortHand, type HandSortMode } from '@shared/game-engine/card-utils';
 
 export function PlayerHand() {
   const myHand = useGameStore((state) => state.myHand) || [];
@@ -31,47 +28,12 @@ export function PlayerHand() {
     isCardSelected,
     isCardHighlighted,
     draggedCardId,
-    dragOverCardId
+    dragOverCardId,
+    touchDraggedCardId,
+    touchDragPosition
   } = useCardSelection();
   const { reorderHand } = usePlayerActions();
   const { tap } = useHaptics();
-
-  // Sorting
-  const [sortMode, setSortMode] = useMemo(() => {
-    // Return current state from UI store
-    const state = useUIStore.getState();
-    const getSortMode = (): SortMode => 'none';
-    const setSortMode = (mode: SortMode) => {};
-    return [getSortMode(), setSortMode] as const;
-  }, []);
-
-  // Sort cards based on mode
-  const sortedHand = useMemo(() => {
-    if (!myHand || myHand.length === 0) return [];
-
-    switch (sortMode) {
-      case 'rank':
-        return sortCardsByRank([...myHand]);
-      case 'suit': {
-        const grouped = groupBySuit([...myHand]);
-        const result: CardType[] = [];
-        // Order: spades, hearts, diamonds, clubs
-        (['♠', '♥', '♦', '♣'] as const).forEach(suit => {
-          const suitCards = grouped.get(suit);
-          if (suitCards) {
-            result.push(...sortCardsByRank(suitCards));
-          }
-        });
-        // Add jokers at the end
-        myHand.filter(c => c.rank === 'Joker' || c.isWild).forEach(c => {
-          if (!result.includes(c)) result.push(c);
-        });
-        return result;
-      }
-      default:
-        return myHand;
-    }
-  }, [myHand, sortMode]);
 
   // Handle card reorder via drag and drop
   const handleReorder = useCallback((fromId: string, toId: string) => {
@@ -85,46 +47,29 @@ export function PlayerHand() {
     reorderHand(newHand.map(c => c.id));
   }, [myHand, reorderHand]);
 
-  // Handle sorting
-  const handleSort = useCallback((mode: SortMode) => {
+  // Sorting is a one-shot action, deliberately. An earlier version kept a
+  // sticky sort and re-applied it whenever the hand changed, which made manual
+  // arrangement impossible: a dragged card was reordered by the server, echoed
+  // back, and immediately sorted away again. In later rounds players group
+  // their hand into prospective sets and runs by hand, and that grouping has to
+  // survive a draw.
+  const handleSort = useCallback((mode: HandSortMode) => {
     tap();
-    // Apply sort immediately to hand
-    if (mode === 'rank') {
-      const sorted = sortCardsByRank([...myHand]);
-      reorderHand(sorted.map(c => c.id));
-    } else if (mode === 'suit') {
-      const grouped = groupBySuit([...myHand]);
-      const result: string[] = [];
-      (['♠', '♥', '♦', '♣'] as const).forEach(suit => {
-        const suitCards = grouped.get(suit);
-        if (suitCards) {
-          result.push(...sortCardsByRank(suitCards).map(c => c.id));
-        }
-      });
-      // Add jokers at the end
-      myHand.filter(c => c.rank === 'Joker' || c.isWild).forEach(c => {
-        if (!result.includes(c.id)) result.push(c.id);
-      });
-      reorderHand(result);
-    }
+    reorderHand(sortHand(myHand, mode).map(c => c.id));
   }, [myHand, reorderHand, tap]);
 
   if (!myHand || myHand.length === 0) {
     return (
-      <div className="p-4 text-center text-emerald-200">
+      <div className={`p-4 text-center ${isLight ? 'text-emerald-800' : 'text-emerald-200'}`}>
         No cards in hand
       </div>
     );
   }
 
-  // Map sorted hand indices back to original hand indices for focus tracking
-  const getFocusedCardId = () => {
-    if (focusedCardIndex >= 0 && focusedCardIndex < myHand.length) {
-      return myHand[focusedCardIndex]?.id;
-    }
-    return null;
-  };
-  const focusedCardId = getFocusedCardId();
+  const focusedCardId =
+    focusedCardIndex >= 0 && focusedCardIndex < myHand.length
+      ? myHand[focusedCardIndex]?.id ?? null
+      : null;
 
   return (
     <div className="space-y-4">
@@ -142,12 +87,17 @@ export function PlayerHand() {
 
       {/* Cards */}
       <div className="flex flex-wrap gap-1 sm:gap-2 justify-center">
-        {sortedHand.map((card, index) => {
+        {myHand.map((card) => {
           const isFocused = card.id === focusedCardId;
+          const isTouchDragging = touchDraggedCardId === card.id;
+
           return (
             <div
               key={card.id}
-              className="relative"
+              // Read back by useCardSelection to resolve the card under a finger:
+              // touch events carry no drop target of their own.
+              data-card-id={card.id}
+              className="relative touch-pan-y"
               onDragOver={(e) => {
                 e.preventDefault();
                 handleDragOver(e, card.id);
@@ -156,7 +106,7 @@ export function PlayerHand() {
               onDrop={() => handleDropOnCard(card.id, handleReorder)}
             >
               {/* Drop indicator */}
-              {dragOverCardId === card.id && draggedCardId !== card.id && (
+              {dragOverCardId === card.id && (
                 <div className="absolute -left-1 top-0 bottom-0 w-1 bg-blue-500 rounded-full z-10 animate-pulse" />
               )}
 
@@ -169,7 +119,7 @@ export function PlayerHand() {
                 card={card}
                 isSelected={isCardSelected(card.id)}
                 isHighlighted={isCardHighlighted(card.id)}
-                isDragging={draggedCardId === card.id}
+                isDragging={draggedCardId === card.id || isTouchDragging}
                 isDisabled={!isMyTurn}
                 onClick={() => handleCardClick(card.id)}
                 onDragStart={(e) => handleDragStart(e, card.id)}
@@ -179,9 +129,7 @@ export function PlayerHand() {
                 onTouchEnd={(e) => handleTouchEnd(
                   e,
                   () => handleCardClick(card.id),
-                  (x, y) => {
-                    // Handle touch drop - would need to detect target element
-                  }
+                  handleReorder
                 )}
               />
             </div>
@@ -189,17 +137,38 @@ export function PlayerHand() {
         })}
       </div>
 
+      {/* Drag ghost - follows the finger during a touch reorder. pointer-events
+          must stay off or it would shadow the card under the finger and break
+          elementFromPoint target detection. */}
+      {touchDraggedCardId && touchDragPosition && (
+        <div
+          className="fixed z-50 pointer-events-none opacity-80"
+          style={{
+            left: touchDragPosition.x,
+            top: touchDragPosition.y,
+            transform: 'translate(-50%, -50%) scale(1.1)'
+          }}
+        >
+          {(() => {
+            const card = myHand.find(c => c.id === touchDraggedCardId);
+            return card ? <Card card={card} readOnly /> : null;
+          })()}
+        </div>
+      )}
+
       {/* Sort buttons - bottom left */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         <button
           onClick={() => handleSort('rank')}
           className="btn-ghost px-3 py-1 text-sm"
+          title="Sort your hand by rank now"
         >
           Sort by Rank
         </button>
         <button
           onClick={() => handleSort('suit')}
           className="btn-ghost px-3 py-1 text-sm"
+          title="Sort your hand by suit now"
         >
           Sort by Suit
         </button>

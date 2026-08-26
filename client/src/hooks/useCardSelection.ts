@@ -14,6 +14,19 @@ interface DragState {
   isDragging: boolean;
 }
 
+/**
+ * Which hand card is under a screen point, if any.
+ *
+ * Touch events have no drag-and-drop target the way HTML5 drag events do, so
+ * the card under the finger has to be resolved from coordinates. PlayerHand
+ * tags each card wrapper with data-card-id for this.
+ */
+function cardIdAtPoint(x: number, y: number): string | null {
+  const element = document.elementFromPoint(x, y);
+  const wrapper = element?.closest('[data-card-id]');
+  return wrapper?.getAttribute('data-card-id') ?? null;
+}
+
 export function useCardSelection() {
   const {
     selectedCardIds,
@@ -142,22 +155,32 @@ export function useCardSelection() {
       longPressTimerRef.current = null;
     }
 
-    // Start drag if moved enough
-    if (!dragStateRef.current.isDragging && (deltaX > 20 || deltaY > 20)) {
+    // Start a reorder drag only on a predominantly *horizontal* swipe. Cards
+    // carry touch-action: pan-y, so a vertical swipe still scrolls the page -
+    // which matters because the hand fills the bottom of a phone screen.
+    if (!dragStateRef.current.isDragging && deltaX > 20 && deltaX > deltaY) {
       dragStateRef.current.isDragging = true;
       setTouchDraggedCard(dragStateRef.current.cardId);
     }
 
     if (dragStateRef.current.isDragging) {
-      e.preventDefault();
+      // No preventDefault here: React attaches touchmove at the root as a
+      // *passive* listener, so calling it is a no-op that only logs
+      // "Unable to preventDefault inside passive event listener invocation".
+      // Scrolling is suppressed declaratively instead, by touch-action: pan-y
+      // on the card wrappers in PlayerHand.
       setTouchDragPosition({ x: touch.clientX, y: touch.clientY });
+
+      // Mirror the desktop drag-over highlight.
+      const overId = cardIdAtPoint(touch.clientX, touch.clientY);
+      setDragOverCard(overId && overId !== dragStateRef.current.cardId ? overId : null);
     }
-  }, [setTouchDraggedCard, setTouchDragPosition]);
+  }, [setTouchDraggedCard, setTouchDragPosition, setDragOverCard]);
 
   const handleTouchEnd = useCallback((
     e: React.TouchEvent,
     onTap: () => void,
-    onDrop?: (x: number, y: number) => void
+    onDropOnCard?: (draggedCardId: string, targetCardId: string) => void
   ) => {
     // Clear long press timer
     if (longPressTimerRef.current) {
@@ -170,21 +193,30 @@ export function useCardSelection() {
       setZoomedCard(null);
     }
 
-    if (!dragStateRef.current) return;
+    const dragState = dragStateRef.current;
 
-    if (dragStateRef.current.isDragging && touchDragPosition) {
-      // Handle drop
-      onDrop?.(touchDragPosition.x, touchDragPosition.y);
-    } else {
-      // Handle tap
-      onTap();
-    }
-
-    // Reset state
+    // Reset state first so an early return below cannot strand a drag.
     dragStateRef.current = null;
     setTouchDraggedCard(null);
     setTouchDragPosition(null);
-  }, [zoomedCard, touchDragPosition, setZoomedCard, setTouchDraggedCard, setTouchDragPosition]);
+    setDragOverCard(null);
+
+    if (!dragState) return;
+
+    if (dragState.isDragging) {
+      // touchend carries no coordinates in e.touches, so use the last position
+      // we tracked during touchmove.
+      const targetId = touchDragPosition
+        ? cardIdAtPoint(touchDragPosition.x, touchDragPosition.y)
+        : null;
+
+      if (targetId && targetId !== dragState.cardId) {
+        onDropOnCard?.(dragState.cardId, targetId);
+      }
+    } else {
+      onTap();
+    }
+  }, [zoomedCard, touchDragPosition, setZoomedCard, setTouchDraggedCard, setTouchDragPosition, setDragOverCard]);
 
   // Cleanup on unmount
   useEffect(() => {

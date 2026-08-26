@@ -5,7 +5,7 @@
 import { useEffect, useCallback } from 'react';
 import { useGameStore, useUIStore, useSettingsStore } from '../store';
 import { usePlayerActions } from './usePlayerActions';
-import { sortCardsByRank, groupBySuit } from '@shared/game-engine/card-utils';
+import { sortHand, detectMeldType, type HandSortMode } from '@shared/game-engine/card-utils';
 
 interface UseKeyboardShortcutsProps {
   onOpenSettings?: () => void;
@@ -59,30 +59,15 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
   // Check if any modal is open
   const hasModalOpen = showHowToPlay || wildcardPositionPrompt || meldWildcardPositionPrompt;
 
-  // Sort by rank handler
-  const handleSortByRank = useCallback(() => {
+  // Sorting shares one implementation with the sort buttons. Like them it is a
+  // one-shot action - it does not stick, so a hand arranged by hand stays put.
+  const applySort = useCallback((mode: HandSortMode) => {
     if (!myHand || myHand.length === 0) return;
-    const sorted = sortCardsByRank([...myHand]);
-    reorderHand(sorted.map(c => c.id));
+    reorderHand(sortHand(myHand, mode).map(c => c.id));
   }, [myHand, reorderHand]);
 
-  // Sort by suit handler
-  const handleSortBySuit = useCallback(() => {
-    if (!myHand || myHand.length === 0) return;
-    const grouped = groupBySuit([...myHand]);
-    const result: string[] = [];
-    (['♠', '♥', '♦', '♣'] as const).forEach(suit => {
-      const suitCards = grouped.get(suit);
-      if (suitCards) {
-        result.push(...sortCardsByRank(suitCards).map(c => c.id));
-      }
-    });
-    // Add jokers at the end
-    myHand.filter(c => c.rank === 'Joker' || c.isWild).forEach(c => {
-      if (!result.includes(c.id)) result.push(c.id);
-    });
-    reorderHand(result);
-  }, [myHand, reorderHand]);
+  const handleSortByRank = useCallback(() => applySort('rank'), [applySort]);
+  const handleSortBySuit = useCallback(() => applySort('suit'), [applySort]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -174,11 +159,13 @@ export function useKeyboardShortcuts({ onOpenSettings }: UseKeyboardShortcutsPro
           break;
 
         case 'm':
-          // Create meld (auto-detect type based on count: 3 = set, 4+ = run)
-          if (isMyTurn && selectedCardIds.length >= 3 && !canDraw) {
+          // Create meld, inferring the type from the cards themselves.
+          // Card count cannot decide this: round 7 requires "3 sets of 4", so a
+          // 4-card selection is as likely to be a set as a run.
+          if (isMyTurn && selectedCardIds.length >= 3 && !canDraw && myHand) {
             e.preventDefault();
-            const meldType = selectedCardIds.length === 3 ? 'set' : 'run';
-            createMeld(meldType);
+            const selected = myHand.filter(card => selectedCardIds.includes(card.id));
+            createMeld(detectMeldType(selected));
           }
           break;
 

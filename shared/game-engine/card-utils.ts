@@ -12,6 +12,8 @@ import { CARD_POINTS, RANK_VALUES, ACE_HIGH_VALUE, WILD_RANKS } from './constant
  * @param aceHigh - Whether to treat Ace as high (14) or low (1)
  * @returns The numeric value of the rank
  */
+const SUIT_DISPLAY_ORDER: Suit[] = ['♠', '♥', '♦', '♣'];
+
 export function getRankValue(rank: Rank, aceHigh: boolean = false): number {
   if (rank === 'A' && aceHigh) {
     return ACE_HIGH_VALUE;
@@ -89,6 +91,59 @@ export function sortCardsBySuit(cards: Card[]): Card[] {
     if (suitDiff !== 0) return suitDiff;
     return getRankValue(a.rank) - getRankValue(b.rank);
   });
+}
+
+/**
+ * How a player's hand is ordered in the UI.
+ */
+export type HandSortMode = 'none' | 'rank' | 'suit';
+
+/**
+ * Sort a hand for display.
+ *
+ * 'rank' orders by rank value. 'suit' groups by suit in ♠ ♥ ♦ ♣ order, ranked
+ * within each group. Wildcards (2s and Jokers) always go last in 'suit' mode so
+ * they are easy to find. 'none' returns the hand untouched, preserving whatever
+ * manual order the player dragged it into.
+ *
+ * Sorting is idempotent - sorting an already-sorted hand returns the same order -
+ * which is what lets the client re-apply a sticky sort without looping.
+ */
+export function sortHand(cards: Card[], mode: HandSortMode): Card[] {
+  if (mode === 'none' || cards.length === 0) return [...cards];
+  if (mode === 'rank') return sortCardsByRank(cards);
+
+  const grouped = groupBySuit(cards);
+  const result: Card[] = [];
+
+  for (const suit of SUIT_DISPLAY_ORDER) {
+    const suitCards = grouped.get(suit);
+    if (suitCards) result.push(...sortCardsByRank(suitCards));
+  }
+
+  // groupBySuit skips wildcards, so append them here.
+  result.push(...cards.filter(card => isWildcard(card)));
+
+  return result;
+}
+
+/**
+ * Infer whether a group of selected cards is a set or a run.
+ *
+ * Sets are same-rank, runs are same-suit sequences, so the non-wild cards
+ * decide it: if they all share a rank it is a set, otherwise a run. Card
+ * *count* cannot decide this - round 7 requires "3 sets of 4", so a 4-card
+ * selection is just as likely to be a set as a run.
+ *
+ * An all-wild selection is genuinely ambiguous; it reports 'set' so the caller
+ * has something to send, and the server's validator has the final say.
+ */
+export function detectMeldType(cards: Card[]): 'set' | 'run' {
+  const nonWild = cards.filter(card => !isWildcard(card));
+  if (nonWild.length === 0) return 'set';
+
+  const allSameRank = nonWild.every(card => card.rank === nonWild[0].rank);
+  return allSameRank ? 'set' : 'run';
 }
 
 /**

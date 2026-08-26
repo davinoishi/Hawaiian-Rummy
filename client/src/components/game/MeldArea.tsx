@@ -4,7 +4,7 @@
 
 import { memo, useCallback } from 'react';
 import { Card } from './Card';
-import { useUIStore, useGameStore } from '../../store';
+import { useUIStore, useGameStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useHaptics } from '../../hooks';
 import type { Meld, Card as CardType } from '@shared/game-engine/types';
 
@@ -19,6 +19,7 @@ interface MeldAreaProps {
 function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: MeldAreaProps) {
   const { layoffMode, selectedMeld, focusedMeld, dragOverMeld, setSelectedMeld, selectedCardIds } = useUIStore();
   const hasMetRequirements = useGameStore((state) => state.hasMetRequirements);
+  const isLight = useSettingsStore((state) => state.resolvedTheme) === 'light';
   const { layoffCard } = usePlayerActions();
   const { tap, meldCreate } = useHaptics();
 
@@ -48,7 +49,7 @@ function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: Mel
 
   return (
     <div className="space-y-2">
-      <h4 className="text-sm text-emerald-200 font-medium">
+      <h4 className={`text-sm font-medium ${isLight ? 'text-emerald-800' : 'text-emerald-200'}`}>
         {isMe ? 'Your Melds' : `${playerName}'s Melds`}
       </h4>
 
@@ -63,8 +64,8 @@ function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: Mel
               key={`${playerId}-meld-${meldIndex}`}
               className={`
                 meld-group relative
-                ${layoffMode && canLayoff ? 'cursor-pointer hover:bg-emerald-600/50' : ''}
-                ${isSelected ? 'ring-2 ring-yellow-400 bg-emerald-600/70' : ''}
+                ${layoffMode && canLayoff ? (isLight ? 'cursor-pointer hover:bg-emerald-200' : 'cursor-pointer hover:bg-emerald-600/50') : ''}
+                ${isSelected ? (isLight ? 'ring-2 ring-amber-500 bg-emerald-200' : 'ring-2 ring-yellow-400 bg-emerald-600/70') : ''}
                 ${isFocused && !isSelected ? 'ring-2 ring-cyan-400 animate-pulse' : ''}
                 ${isDragOver ? 'ring-2 ring-green-400 bg-green-600/30' : ''}
               `}
@@ -91,11 +92,13 @@ function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: Mel
               <div className="flex flex-col items-center mr-2">
                 <span className={`
                   text-[10px] font-bold px-1.5 py-0.5 rounded
-                  ${meld.type === 'set' ? 'bg-blue-500/30 text-blue-200' : 'bg-green-500/30 text-green-200'}
+                  ${meld.type === 'set'
+                    ? (isLight ? 'bg-blue-100 text-blue-800' : 'bg-blue-500/30 text-blue-200')
+                    : (isLight ? 'bg-green-100 text-green-800' : 'bg-green-500/30 text-green-200')}
                 `}>
                   {meld.type === 'set' ? 'SET' : 'RUN'}
                 </span>
-                <span className="text-[9px] text-emerald-300 mt-0.5">
+                <span className={`text-[9px] mt-0.5 ${isLight ? 'text-emerald-700' : 'text-emerald-300'}`}>
                   {meld.cards.length} cards
                 </span>
               </div>
@@ -111,7 +114,7 @@ function MeldAreaComponent({ playerId, playerName, melds, isMe, canLayoff }: Mel
                     <Card
                       card={card}
                       size="sm"
-                      isDisabled={true}
+                      readOnly
                     />
                   </div>
                 ))}

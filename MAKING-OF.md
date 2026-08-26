@@ -1,0 +1,659 @@
+# Making of Hawaiian Rummy
+
+The running story of this project — what got decided, what got tested, and what turned
+out to be wrong. Appended to after every session. Newest session at the bottom.
+
+The point of this file is the wrong turns. Anyone can read README.md and see where
+things landed; this is the record of how, so a decision doesn't get re-litigated in six
+months because nobody remembers why it went the way it did.
+
+---
+
+## Session 1 — 2026-08-26 — Review, and the "table never stalls" fixes
+
+First session after a ~3 month gap. Last real code change was the v2.5.0 tournament
+system (`bbadf9c`); the two commits after it were README link edits.
+
+### Starting health check (verified)
+
+- `cd client && npx tsc --noEmit` — clean.
+- `./node_modules/.bin/tsc -p tsconfig.server.json --noEmit` — **one pre-existing error**,
+  `server/tournament-manager.ts(665,7): TS2322: Type 'string | null' is not assignable
+  to type 'string | undefined'`. Confirmed pre-existing by stashing all changes and
+  re-running. This means `npm run build` is currently broken. `npm start` works anyway
+  because it runs through `tsx`, which does not typecheck. **Not fixed this session** —
+  out of scope, flagged for later.
+- `npm run client:build` reproduced the exact committed bundle hashes
+  (`index-C6laJOal.js`, `index-0_szPen-.css`), so `public/` was genuinely in sync with
+  `client/src`. Worth knowing: the committed bundle is trustworthy, not stale.
+- No tests exist anywhere in the repo. No lint in CI (`.github/` has only Dependabot).
+
+### Roadmap reality check
+
+README's "Future Enhancements" was stale in both directions:
+
+| Listed item | Actual |
+|---|---|
+| Saved games / resume **for offline mode** | Save/resume exists (single-player, via profiles). Offline mode itself was *deleted* in v2.4.0, so the line describes something that can't exist. |
+| Tournament mode | Shipped in v2.5.0. Still listed as future. |
+| Custom game rules configuration | Not started. |
+| Enhanced AI difficulty levels | Partial — 4 personalities, no difficulty selector. |
+| Mobile app version | Not started (PWA manifest + SW present). |
+
+Other drift found: both `package.json`s say `2.0.0` while the game is v2.5.0; CHANGELOG
+has no v2.5.0 entry; `AI_IMPLEMENTATION.md` names the AIs Alex/Jordan/Taylor when
+`constants.ts` says 🥭 Mango / 🍍 Pineapple / 🥥 Coconut / 🧃 Papaya; README claims the
+settings panel has a haptics toggle and that action buttons have tooltips — neither is
+true. **None of this was fixed this session**; it's queued behind the gameplay work.
+
+### The plan we picked
+
+A usability review turned up 18 items. Agreed order:
+
+1. **Group 1+2 — "the table never stalls"** (this session): idle-turn timer,
+   server-driven buy-window expiry, pinned buy prompt.
+2. Group 3+5+6 — mobile card reordering, sticky sort, dead sort state.
+3. Group 7+9+10+11+12+13 — requirement progress, disabled-button reasons, the `M`
+   shortcut bug, light-theme MeldArea, haptics toggle, discard pile count.
+
+### What shipped this session
+
+**1. Idle-turn timer (`TURN_IDLE_TIMEOUT = 120000`).**
+
+The bug: `server/index.ts`'s periodic check only skipped turns for *disconnected*
+players. A player who stayed connected but walked away stalled the table forever.
+Disconnect had a 45s grace period and AI takeover; idle had nothing at all.
+
+Design decisions worth recording:
+
+- **Auto-play the turn, don't skip it.** The disconnect path calls
+  `advanceToNextActivePlayer()`, which skips the turn outright. Copying that for idle
+  players would have been less code, but it leaves hand sizes wrong — the player never
+  draws. Instead `autoPlayIdleTurn()` plays the minimum legal turn: draw, then discard.
+- **Discard the highest-point non-wild card.** Trims the most points off the idle
+  player's round score without throwing away a wildcard they'll want when they return.
+- **Cancel incomplete melds first.** `canDiscard()` in `discard-action.ts` refuses a
+  discard while a player has melds down that don't meet the round requirement, so the
+  auto-play would have failed silently without this.
+- **Only enforce the clock when 2+ humans are connected.** A solo player against AI can
+  take as long as they like — nobody is waiting on them. This is `connectedHumans.length
+  < 2` in `isIdleTimerApplicable()`. Also skipped for tutorial mode, AI turns, and
+  already-disconnected players.
+- **`syncTurnClock()` rather than resetting the clock at every call site.** The turn
+  advances through at least four paths (normal discard, disconnect skip, AI takeover,
+  new round). Rather than remembering to reset in each, the server tick compares
+  `currentPlayerIndex` against `room.turnClockPlayerIndex` and restarts the clock on a
+  change. Within-turn activity resets it too, via `GameManager.processAction()`.
+
+**2. Server-driven buy-window expiry.**
+
+The bug: `isBuyWindowActive()` is computed on read from `lastDiscardTimestamp`. Nothing
+re-broadcast when the 5-second window closed, so clients kept a stale
+`buyWindowActive: true` until the next action. The "Buy this card?" panel sat on screen
+at 0s doing nothing.
+
+The client had been papering over this with **two separate local timers** —
+`usePlayerActions.ts` and `DiscardPile.tsx` — which initialised `localBuyWindowExpired`
+to *opposite* values (`true` vs `false`). Both are now deleted; the server broadcasts
+once per discard when the window closes, and `canTakeDiscard` is authoritative again.
+
+Consolidated all of this into one commented room tick in `server/index.ts` handling
+(1) disconnect skip, (2) buy-window expiry, (3) idle auto-play.
+
+**3. Buy prompt pinned to the viewport.**
+
+`GameBoard.tsx` rendered `<BuyActions/>` *in the page flow*, between the deck row and
+the hand. On a phone in round 10 with 15 cards, that is plausibly scrolled off-screen
+for the entire 5-second life of the prompt. Now `fixed inset-x-0 bottom-0 z-40` with
+`pointer-events-none` on the wrapper so it doesn't eat taps on the board behind it.
+`BuyActions` also now returns `null` once its local countdown hits 0, so the panel
+disappears instantly rather than waiting up to 1s for the server broadcast.
+
+**Incidental, forced by the change:** `shouldSkipBuyWindow()` logged three lines every
+time it ran, and it runs twice per player per broadcast. The new 1Hz tick would have
+made that catastrophic, so the logging came out. A 50-second 4-player session now
+produces 164 log lines total.
+
+### Wrong turns
+
+**WRONG THEORY: "the idle timer isn't firing, the guard must be broken."**
+First run of the idle test showed `turnTimeRemaining=0` and no auto-play. Spent time
+suspecting `isIdleTimerApplicable()`. Added a `[TICKDEBUG]` line to the tick and the
+actual state was:
+
+```
+players=[0DOsQkvYWgmyMmHbAAAB, ai-WW7TZ7-2, ai-WW7TZ7-1, ai-WW7TZ7-0]
+```
+
+Only **one** human in the room. The guard was correct; the *test* was wrong. The test
+had used `a.emit('createRoom', { playerName: 'Ann' })` and
+`b.emit('joinRoom', {...})`, but the real signatures are positional
+`createRoom(playerName, tutorialMode, ...)` and the join event is `joinGame`, not
+`joinRoom` (`server/socket-handlers/room-handler.ts:106,187`). Bob never joined; the
+room filled with 3 AI. Lesson: check the actual `socket.on(...)` signatures before
+writing a harness against them — the client wrappers hide the shape.
+
+**Nearly shipped a bug:** the first version reset the idle clock only inside
+`processAction()`. But `advanceToNextActivePlayer()` doesn't go through
+`processAction()`, so after a disconnect-skip or an idle-skip the *next* player would
+have inherited an already-expired clock and been auto-played instantly. That's what
+`syncTurnClock()` exists to prevent. Caught by reasoning through the paths, **not** by a
+test — no test covers the skip-then-next-player sequence.
+
+### Verification (all actually run, against a live server on :3001)
+
+Driven by two throwaway socket.io harnesses (not committed — they live in the session
+scratchpad).
+
+- **Buy-window expiry**, production settings: `buy window OPENED (remaining=5)` then
+  `buy window CLOSED via unprompted broadcast, +5446ms  canTakeDiscard=false`. No client
+  action was sent between the two. Before this change no such broadcast existed at all.
+- **Idle auto-play**, with `TURN_IDLE_TIMEOUT` temporarily lowered to `8000` and the
+  server restarted:
+  ```
+  03:03:25 Ann's turn began. hand=9 turnTimeRemaining=8s phase=draw
+  03:03:25 >>> sending NO actions; expecting server auto-play
+  03:03:34 Ann NOTIF: ⏱ Ann ran out of time - auto-discarded A♥
+  03:03:34 Bob NOTIF: ⏱ Ann ran out of time - auto-discarded A♥
+  03:03:41 after idle: Ann isMyTurn=false hand=9 (was 9)
+  ```
+  Drew one, discarded the highest non-wild (A♥, 15pts), turn passed, both clients
+  notified. Hand back to 9 confirms draw+discard rather than a skip.
+- **No premature auto-play**: 50-second session at the restored 120s timeout produced
+  `0` occurrences of "Auto-played idle turn".
+- **Log spam gone**: `0` occurrences of `[BUY WINDOW]`.
+- Constant restored to `120000` and the debug line removed before committing — both
+  greps confirmed at `0` / `120000`.
+
+**Assumed, not verified:** none of the visual changes were checked in a real browser.
+The pinned buy prompt, the red pulsing turn countdown in `RoundInfo`, and the discard
+pile count are typecheck-clean and built, but nobody has looked at them on a phone.
+
+### Notes for next session
+
+- Group 3+5+6 is next: mobile touch reorder (`PlayerHand.tsx` passes an empty `onDrop`
+  to `handleTouchEnd` — touch drag literally goes nowhere), sticky sort preference, and
+  the dead `sortMode` `useMemo` that always returns `'none'`.
+- `tournament-manager.ts:665` still breaks `npm run build`. One line. Worth doing.
+- The idle timeout is deliberately generous (2 min) and only applies with 2+ humans. If
+  real games feel slow, that's the knob — `TURN_IDLE_TIMEOUT` in
+  `shared/game-engine/constants.ts`.
+
+---
+
+## Session 2 — 2026-08-26 — Mobile hand handling, and a bug I shipped last session
+
+Second half of the same working day. Goal: the pre-existing `npm run build` failure,
+then group 3+5+6 from session 1's plan — mobile card reordering, sticky sort, and the
+dead sort state.
+
+### Correction to session 1
+
+**The idle clock reset was wrong.** Session 1 put `room.turnActivityAt = Date.now()` on
+*every* successful action in `GameManager.processAction()`, with the comment "any
+successful action means the table is moving". That is not what the clock measures. It
+measures whether *the player we are waiting on* is still there. `REORDER_HAND` is
+allowed at any time by any player (`game-state.ts:289` returns `{ valid: true }`
+unconditionally), so an opponent idly sorting their own hand — or the sticky sort added
+*this* session, which reorders automatically on every hand change — would have kept
+resetting the current player's idle clock and defeated the timeout entirely.
+
+Fixed by capturing whether the acting player was the current player *before* running the
+action (the action may advance the turn) and only resetting the clock then:
+
+```ts
+const actingPlayerWasCurrent = room.state.players[room.state.currentPlayerIndex] === action.playerId;
+```
+
+Worth noting the shape of this mistake: the session 1 feature was verified working, and
+it *was* working — against the tests written for it. The hole only appeared when a later
+feature started emitting a common action from a non-current player. Nothing caught it
+but re-reading the code while adding that feature.
+
+### The build fix
+
+`server/tournament-manager.ts:665`. `let roomId = tournament.activeRoomId` is
+`string | undefined` (`activeRoomId?: string` in `shared/tournament-types.ts:102`), but
+`createTournamentGameRoom()` returns `string | null`. Narrowed through a local instead of
+assigning straight back. `npm run build` now succeeds; it had been failing since before
+session 1, hidden because `npm start` runs through `tsx`, which does not typecheck.
+
+### What shipped
+
+**One sort implementation instead of three.** The suit-sort logic was written out
+separately in `PlayerHand`'s `sortedHand` memo, in `PlayerHand`'s `handleSort`, and again
+in `useKeyboardShortcuts.handleSortBySuit`. Now `sortHand(cards, mode)` in
+`shared/game-engine/card-utils.ts` and everything calls it.
+
+**The dead sort state is gone.** `PlayerHand` had:
+
+```tsx
+const [sortMode, setSortMode] = useMemo(() => {
+  const state = useUIStore.getState();          // assigned, never read
+  const getSortMode = (): SortMode => 'none';   // always 'none'
+  const setSortMode = (mode: SortMode) => {};   // no-op
+  return [getSortMode(), setSortMode] as const;
+}, []);
+```
+
+`sortMode` was hardcoded `'none'`, so the whole `sortedHand` memo below it was dead and
+the component always rendered `myHand` directly. The sort buttons only worked because
+`handleSort` bypassed all of it and emitted `reorderHand` to the server.
+
+**Sort is now sticky.** `handSortMode` lives in `settings-store` and persists to
+localStorage alongside sound and theme. An effect re-applies it whenever the hand
+changes, so a new deal, a draw, or a won buy all land already ordered. Buttons toggle
+(clicking the active mode returns to manual), and an "auto-sorting" label shows when a
+mode is on. `sortHand` is idempotent, which is what stops the effect from looping — once
+the server echoes the sorted order back, the order already matches and nothing is
+emitted.
+
+**Mobile card reordering actually works now.** `PlayerHand` was passing an empty
+callback into `handleTouchEnd`:
+
+```tsx
+(x, y) => {
+  // Handle touch drop - would need to detect target element
+}
+```
+
+Touch drag started, tracked the finger, and dropped nowhere. Now card wrappers carry
+`data-card-id`, and `cardIdAtPoint()` in `useCardSelection` resolves the drop target with
+`document.elementFromPoint(...).closest('[data-card-id]')`. Added a drag ghost that
+follows the finger (`pointer-events-none`, or it would shadow the card underneath and
+break the hit test) and a drop indicator on the hovered card.
+
+Gesture change: a drag now starts only on a *predominantly horizontal* swipe
+(`deltaX > 20 && deltaX > deltaY`) and cards carry `touch-action: pan-y`, so a vertical
+swipe still scrolls the page. That matters because the hand fills the bottom third of a
+phone screen; the old `deltaX > 20 || deltaY > 20` would have captured scroll attempts.
+
+### Wrong turns
+
+**WRONG THEORY: "the touch handlers never fire — React must not be seeing the events."**
+A probe on `document` showed touchstart plus 12 touchmove events arriving, but a
+`console.log` inside `handleTouchStart` printed nothing, and a mouse click on a card did
+nothing either. Spent time suspecting React's synthetic event system and the service
+worker. The actual reason was much dumber: **it was not the player's turn**, so
+`isDisabled` was true, and the test never waited for one. Once the harness waited on
+`document.body.innerText.includes('Your Turn')`, every handler fired immediately. Lesson:
+when a UI does nothing, check the app's own state gates before suspecting the framework.
+
+**The real blocker was the chat button, and only the hit test found it.** With the drag
+finally running (`isDragging: true`, ghost on screen, deltas up to 260px), the drop still
+did nothing. Hit-testing the finger position mid-drag returned:
+
+```
+{"ghostOnScreen":true,"top":"BUTTON.relative flex items-center gap-2 px-4 py-2 rounded","resolvedCardId":null}
+```
+
+`ChatPanel` is `fixed bottom-4 right-4 z-50`. On a 393×727 phone viewport that lands at
+roughly y 671–711, directly on top of the hand row at y 682. **The floating chat button
+has been sitting on top of the player's cards on every phone**, swallowing taps as well
+as drops — a pre-existing bug nobody had reported, found only because the drop needed a
+target. Fixed by hiding the FAB below `sm:` and docking a chat toggle (with the unread
+badge) into the `RoundInfo` header next to Help and Settings. Desktop keeps the FAB;
+verified at 1280×900 that the FAB is `display: flex` and the header button is hidden.
+
+Note this is inherent, not incidental: a `position: fixed` button over a scrolling page
+will overlap *something* at some scroll offset. Moving it into the header was the fix,
+not nudging its offset.
+
+**`e.preventDefault()` in the touchmove handler has been dead code all along.** The
+browser console during a drag:
+
+```
+Unable to preventDefault inside passive event listener invocation.   (×7)
+```
+
+React attaches `touchmove` at the root as a passive listener, so the call has never
+suppressed anything. Removed it; `touch-action: pan-y` is what actually governs
+scrolling. The pre-existing code had been relying on a no-op.
+
+**WRONG THEORY: "the blank page means the app crashed."** One verification run came back
+with an empty `document.body.innerText` and no hand. No page error was logged and the
+server was healthy (`curl` returned 200, assets present on disk). The cause was the
+**service worker** serving a cached `index.html` pointing at a bundle hash that a rebuild
+had just deleted — Vite's `emptyOutDir: true` removes the old `public/assets/*` on every
+build, and I had rebuilt three times mid-test. Running the browser context with
+`serviceWorkers: 'block'` made the runs deterministic. Not proven to affect real
+deploys (navigation is network-first in `public/sw.js:68`), so **assumed benign in
+production** — but `CACHE_NAME` is a permanent `'hawaiian-rummy-v1'` that never rotates,
+which is worth a look sometime.
+
+### Verification (all actually run)
+
+`sortHand` unit check via `tsx`, on a 9-card hand containing a Joker and a wild 2:
+
+```
+original : K♦ 🃏 3♠ A♥ 2♣ 7♠ 10♥ 3♦ Q♠
+rank     : 🃏 A♥ 2♣ 3♠ 3♦ 7♠ 10♥ Q♠ K♦   idempotent=true preservesAllCards=true 9/9
+suit     : 3♠ 7♠ Q♠ A♥ 10♥ 3♦ K♦ 🃏 2♣   idempotent=true preservesAllCards=true 9/9
+none     : unchanged=true
+```
+
+`preservesAllCards` is the one that matters — a sort that dropped a card would silently
+corrupt a hand.
+
+Real browser, Chromium via Playwright emulating a Pixel 5 (393×727, touch), driving an
+actual game against AI, touch events dispatched over CDP `Input.dispatchTouchEvent`:
+
+```
+=== 1. mobile touch drag reorder ===
+  moved 2♥2: index 0 -> 5   reordered=true  noCardsLost=true
+=== 2. chat button no longer covers the hand ===
+  cards obstructed at their centre: 0 of 6 on-screen
+  header chat button (phones): true
+  floating chat FAB computed display on phone: none
+=== 3. sticky sort ===
+  sorted hand: 🃏 2♥ 2♥ 5♣ 6♠ 9♥ 9♦ 10♥ Q♥
+  persisted: {"soundEnabled":true,"soundVolume":0.5,"themeMode":"dark","handSortMode":"rank"}
+  indicator shown: true
+  order stable over 4s (no reorder loop): true
+=== 4. sticky across sessions ===
+  localStorage handSortMode after reload: rank
+```
+
+Desktop regression check at 1280×900: FAB `display: flex`, header chat button hidden,
+mouse drag reordered the hand with no card loss.
+
+Both typechecks clean; `npm run build` and `npm run client:build` both succeed.
+
+An earlier obstruction check reported "3 of 9 cards obstructed" and was **wrong** — those
+three were at y=758 on a 727px viewport, i.e. below the fold, where `elementFromPoint`
+returns null. The check now only considers cards inside the viewport.
+
+### Found but not fixed
+
+- **The deck/discard hint labels are covered on mobile.** "Click to draw" and "Click to
+  take" are positioned `absolute -bottom-6`, which puts them underneath the
+  `panel p-4 mt-auto` player section on a phone. Playwright refused to click one:
+  `<div class="panel p-4 mt-auto">…</div> intercepts pointer events`. The deck itself is
+  still clickable, so this is cosmetic — the hint is just unreadable/untappable.
+- `public/sw.js` `CACHE_NAME` never rotates.
+
+### Notes for next session
+
+Group 7+9+10+11+12+13 is next, and three of those are now better understood:
+
+- #7 requirement progress: `getMeldsNeeded()` (`validation/requirements.ts:97`) is still
+  written and still unused.
+- #10 the `M` auto-meld shortcut maps 3 cards → set, 4+ → run, which is wrong for
+  round 7's "3 sets of 4". Detect by rank equality, not count.
+- #12 haptics toggle: the preference already exists in `useHaptics.ts` localStorage under
+  `hawaiianRummy_haptics`; `settings-store` now has the pattern to follow for it.
+
+### Session 2 addendum — verifying the part I had only argued for
+
+On review, the session 2 verification above covered the sort *button* but not the actual
+claim behind item #5: that **a deal and a draw come up already ordered**. That is the
+whole point of a sticky sort, and it had been reasoned about, not measured. Tested it
+properly, on a Pixel 5 profile with `handSortMode: 'rank'` seeded into localStorage
+before the first page load, i.e. a returning player:
+
+```
+=== A. first deal, preference restored from localStorage, no button pressed ===
+  ranks: A 2 3 4 4 7 7 Q Q       DEAL ARRIVES SORTED: true
+  auto-sorting indicator: true   Sort by Rank shown active: true
+=== B. draw a card ===
+  before draw: A 2 3 4 4 7 7 Q Q     sorted=true
+  after draw : A 2 3 4 4 6 7 7 Q Q   sorted=true
+  drew 6♥ -> landed at index 5 of 10 (inserted, not appended)
+```
+
+**WRONG RESULT, and it was the test's fault, not the product's.** The first run of test B
+reported `DRAW LANDED SORTED: false`. The drawn card was a Joker and the hand read
+`Joker 2 3 4 4 6 J Q Q K` — which is correct, since `sortCardsByRank` gives Joker a rank
+value of 0. The harness scored it wrong: its rank regex was `/^(10|[AJQK2-9]|Joker)/`,
+and regex alternation is first-match-wins, so `"Joker0"` matched the `J` branch and was
+counted as a Jack (11) sitting in position 0. Reordering the alternation to
+`/^(Joker|10|[AJQK2-9])/` fixed it. Worth writing down because the failure looked exactly
+like a real product bug and would have been easy to "fix" in the wrong place.
+
+Also found while checking for leftovers: **`npm run lint` in `client/` does not work at
+all** — `ESLint couldn't find a configuration file`. The script is in `package.json` with
+`--max-warnings 0`, but no eslint config has ever existed in the repo. So the "no lint in
+CI" note from session 1 is worse than recorded: there is no lint locally either.
+
+`sortCardsBySuit()` in `card-utils.ts` has zero callers. It was already dead before this
+session (the old code hand-rolled its own suit grouping rather than calling it); left in
+place rather than widening this change.
+
+---
+
+## Session 3 — 2026-08-26 — The polish group, and two defects the screenshots caught
+
+Final group from the session 1 review: items 7, 9, 10, 11, 12, 13.
+
+### What shipped
+
+**#13 was already done.** The discard pile count shipped as part of group 1+2 in session 1
+(`Discard (3)`, matching the deck's `Deck (125)`). Verified rather than re-implemented.
+
+**#7 Requirement progress.** `RoundInfo` showed `Goal: 3 sets of 3 and a run of 5` and
+nothing else until the whole requirement was met. It now appends live counts —
+`Goal: 2 sets of 3 (0/2 sets)` — derived from `getMeldsNeeded()`, which had been sitting
+in `validation/requirements.ts:97` written and unused since it was added.
+
+**#9 Disabled buttons now say why.** Create Set / Create Run / Discard were greyed with
+no explanation. Each now carries a `title` naming the blocker, and — because a `title`
+never appears on a touch device — the single most relevant reason is rendered inline
+under the buttons: *"Draw from the deck or take the discard to start your turn."*
+becoming *"Tap cards to select them, then create a meld or discard."* once you have
+drawn. Also deleted `canLayoff`, a computed variable nothing referenced.
+
+**#10 The `M` shortcut was genuinely wrong, not just inelegant.** It chose the meld type
+by counting cards: `selectedCardIds.length === 3 ? 'set' : 'run'`. Round 7 requires
+**3 sets of 4**, so pressing `M` on a legitimate four-of-a-kind tried to build a run and
+failed. Replaced with `detectMeldType()` in `card-utils`, which decides from the cards:
+if the non-wild cards all share a rank it is a set, otherwise a run. `HowToPlayModal`
+documented the buggy behaviour as if intended ("Auto meld (3=set, 4+=run)") and was
+corrected too.
+
+**#11 MeldArea was dark-theme only**, while every sibling component branched on
+`isLight`. Measured contrast ratios for the classes as they actually rendered on the
+light theme, versus after:
+
+| element | before | after |
+|---|---|---|
+| "X's Melds" heading (`text-emerald-200` on `emerald-50`) | **1.22:1** | 7.29:1 |
+| SET/RUN badge (`text-blue-200` on `bg-blue-500/30`) | **1.10:1** | 7.15:1 |
+| "3 cards" count (`text-emerald-300` on meld group) | **1.34:1** | 4.84:1 |
+
+WCAG AA for normal text is 4.5:1. 1.10:1 is, for practical purposes, invisible — light
+theme players have not been able to read the SET/RUN labels at all. Before-figures
+computed from the Tailwind palette values; after-figures measured with
+`getComputedStyle` in the running app.
+
+**#12 The haptics toggle was missing, and the reason was worse than it looked.** The
+plan was "add a switch to SettingsPanel". But `useHaptics` held the preference in its own
+`useState`:
+
+```ts
+const [enabled, setEnabledState] = useState(getSavedHapticsState);
+```
+
+`useHaptics()` is called from about a dozen components, and each call creates its own
+copy of that state. A toggle wired to SettingsPanel's copy would have flipped the switch,
+written localStorage, and **changed nothing** — every other component would have kept
+vibrating until a reload. Moved the flag into `settings-store` (one shared zustand store,
+same shape as the sound setting) and pointed `useHaptics` at it. Kept the legacy
+`hawaiianRummy_haptics` localStorage key rather than folding it into the settings blob,
+so nobody loses a preference they already set. The switch only renders where
+`navigator.vibrate` exists.
+
+### Two defects the screenshots caught that no test would have
+
+Both found by actually looking at a full-page screenshot of the running game, not by any
+assertion.
+
+**Melded cards were washed out.** `MeldArea` passed `isDisabled` to `Card` to make melds
+non-interactive, but `isDisabled` also applies `card-disabled` → `opacity-50`. That is
+right for "you can't play this right now" and wrong for cards on the table: you need to
+read opponents' melds to plan layoffs, and at 50% opacity on a light background they were
+barely legible. Added a `readOnly` prop to `Card` that blocks the click and the
+hover-lift but leaves the card at full opacity, and used it for melds and for the touch
+drag ghost (which had been 0.5 × 0.8 = 0.4 opacity).
+
+**The pinned buy prompt from session 1 was translucent.** `.panel` is
+`rgba(209,250,229,0.85)` in light and `bg-emerald-800/90` in dark — fine for a panel in
+the page flow, wrong for one pinned above the board. The screenshot showed the action
+bar's "Waiting for your turn…" reading straight through the middle of "Buy this card?".
+This was a defect I introduced in session 1 and did not notice, because session 1's
+verification was socket-level and never looked at the screen. Added a `.panel-solid`
+modifier (specificity-matched to beat the themed `.panel` rules) and applied it to the
+buy prompt. Now measured `rgb(236, 253, 245)` — no alpha channel at all.
+
+The lesson worth keeping: session 1 verified the buy prompt's *behaviour* (it opens, it
+expires, it is pinned to the bottom) and every one of those assertions passed while the
+thing was visually broken. Screenshots are not decoration.
+
+### Verification (all actually run)
+
+`detectMeldType` unit check via `tsx`, 6/6:
+
+```
+PASS  4-card set (round 7!)    -> set     PASS  3-card set          -> set
+PASS  4-card run               -> run     PASS  3 cards + wild      -> run
+PASS  set with a wild          -> set     PASS  all wild (ambiguous)-> set
+```
+
+Live game, Chromium/Playwright, Pixel 5, **light theme** (so #11 is exercised):
+
+```
+#7  goal line: "Goal: 2 sets of 3(0/2 sets)"   shows progress counts: true
+#9  hint before drawing: "Draw from the deck or take the discard to start your turn."
+    Create Set (3+) => "Draw a card first" (disabled=true)
+    Create Run (4+) => "Draw a card first" (disabled=true)
+    Discard         => "Draw a card first" (disabled=true)
+    after drawing:  "Tap cards to select them, then create a meld or discard."
+    Discard         => "Select a card to discard" disabled=true
+#11 heading 7.29:1 · badge 7.15:1 · card count 4.84:1  (theme=light)
+#12 Haptics section visible: true
+    aria-checked true -> false, localStorage hawaiianRummy_haptics: "false"
+buy prompt: bg rgb(236,253,245) opaque=true pinnedToBottom=true topElementIsPanel=true
+```
+
+The `#11` check needed melds on the table, which meant driving real turns — the harness
+auto-plays (draw, select last card, discard) until a `.meld-group` appears. Took one turn
+before an AI melded.
+
+Both typechecks clean, both builds succeed.
+
+**Assumed, not verified:** the `M` shortcut's *wiring* was not exercised end-to-end in a
+browser — that would need a hand containing a natural four-of-a-kind. The decision logic
+is unit-tested 6/6 and the wiring is two lines (`myHand.filter(...)` then
+`createMeld(detectMeldType(selected))`).
+
+### Review scoreboard
+
+All 18 items from the session 1 review are now closed across sessions 1–3, plus five
+things found along the way that were not on the list: the chat button covering the hand
+(session 2), the dead `preventDefault` (session 2), the idle-clock scope bug (session 2),
+washed-out melds, and the translucent buy prompt (both this session).
+
+### Still open
+
+- Deck/discard hint labels (`-bottom-6`) sit under the player panel on a phone. Cosmetic.
+- `public/sw.js` `CACHE_NAME` is a permanent `'hawaiian-rummy-v1'`.
+- `client/` has no ESLint config, so `npm run lint` has never worked.
+- `sortCardsBySuit()` in `card-utils.ts` has no callers.
+- Documentation drift catalogued in session 1 is still entirely unaddressed: both
+  `package.json`s say `2.0.0` for a v2.5.0 game, CHANGELOG has no v2.5.0 entry, README
+  lists tournaments as a future enhancement and describes a client build step that does
+  not match `vite.config.ts`, and `AI_IMPLEMENTATION.md` names AI players that no longer
+  exist. That is probably the cheapest remaining win in the repo.
+
+---
+
+## Session 4 — 2026-08-26 — Correction to session 2: the sticky sort was wrong
+
+Davin, testing the branch, asked why auto-sorting was enabled at all: *"later in the
+game when players need sets and runs, auto-sort is harder to organize the cards. The
+sort should be manual."*
+
+He is right, and the problem is worse than a preference call.
+
+### The two features I shipped were fighting each other
+
+Session 2 delivered **both** a working mobile drag-to-reorder (item #3) **and** a sticky
+sort that re-applied itself on every hand change (item #5). They are mutually exclusive
+by construction, and I never tested them together:
+
+1. Drag a card → `reorderHand(newOrder)` goes to the server
+2. Server echoes the new hand order back
+3. The sticky-sort effect sees the order differs from sorted → emits `reorderHand(sortedIds)`
+4. The card snaps back
+
+Measured on the branch as shipped, with `handSortMode: 'rank'`:
+
+```
+before drag : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+right after : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+2s later    : A♦2,2♣0,5♣2,6♦0,7♥2,9♠0,10♥0,Q♠2,K♦2
+dragged card A♦2: index 0 -> 0     DRAG PERSISTED: false   SNAPPED BACK: true
+```
+
+So the headline fix of session 2 — mobile card reordering, which I verified extensively
+and reported as working — was **dead on arrival for anyone with a sort mode enabled**.
+Both of my session 2 verifications were real and both passed; neither exercised the
+interaction. The drag test ran with sorting off, the sort test never dragged.
+
+### WRONG PREMISE: item #5 itself
+
+Session 1 recorded the problem as *"Hands are dealt unsorted every round and sort isn't
+sticky... Every round starts with a manual 'Sort by Rank'."* That framing assumed sorted
+is the state a player wants to be in, and that re-sorting is friction.
+
+That is wrong for this game. Round 10 is "3 runs of 5" against a 15-card hand: players
+group their cards into prospective melds by hand, and that grouping is *information* —
+it has to survive a draw. A rank sort actively destroys it, and doing so automatically
+destroys it without asking. The friction I "fixed" was the player expressing a
+preference, and the fix overrode the preference.
+
+Worth noting how the mistake was invisible from inside the work: every measurement in
+session 2 was about whether the sort *worked*, and it did — it sorted the deal, it
+sorted the draw, it persisted, it did not loop. Nothing I measured could have told me
+that sorting the draw was the wrong thing to do. That needed someone who plays the game.
+
+### The fix
+
+Sorting is now a one-shot action, as it was before session 2, and nothing else:
+
+- Deleted the re-apply effect from `PlayerHand`.
+- Removed `handSortMode` from `settings-store` entirely — there is no mode to persist.
+  A stale `handSortMode` left in a returning player's localStorage is simply ignored.
+- Sort buttons are plain actions again: no active ring, no "auto-sorting" label, no
+  toggle-off behaviour.
+- `R` / `S` shortcuts likewise sort once.
+
+Kept from session 2: the shared `sortHand()` helper (three hand-rolled copies collapsed
+into one), the removal of the dead `useMemo` sort state, and the working touch drag —
+which is the point, since it now actually works.
+
+### Verification (all actually run)
+
+Same harness, after the change:
+
+```
+1. sort buttons still work (one-shot)
+   before:            K Q 2 K 10 Joker 8 6 K   sorted=false
+   after Sort by Rank: Joker 2 6 8 10 Q K K K  sorted=true
+   no "auto-sorting" label: true
+2. a manual drag survives
+   arranged: 2 6 8 10 Q Joker K K K   (deliberately not sorted: true)
+3. drawing a card does NOT re-sort the arrangement
+   after draw: 2 6 8 10 Q Joker K K K 7
+   drew 7♠0 -> index 9 of 10          ARRANGEMENT PRESERVED: true
+```
+
+And the drag test that failed above now reports `index 0 -> 5, DRAG PERSISTED: true`,
+with the hand left unsorted despite a seeded `handSortMode: 'rank'` in localStorage.
+
+### The lesson worth keeping
+
+Two features that each pass their own tests can still be mutually exclusive. Session 2
+shipped a reordering feature and an auto-reordering feature on the same array on the same
+day and tested them in separate harnesses. The cheap check that would have caught it —
+"turn on feature A, then use feature B" — took about four minutes to write once someone
+pointed at it.

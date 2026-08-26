@@ -233,6 +233,15 @@ export function useSocketEvents() {
       }, 3000);
     };
 
+    // Generic game notifications (idle-turn auto-play, etc). Reuses the same
+    // toast surface as buy notifications.
+    const handleGameNotification = (data: BuyNotification) => {
+      callbacks.setBuyNotification(data);
+      setTimeout(() => {
+        callbacks.setBuyNotification(null);
+      }, 4000);
+    };
+
     // Error events - server sends string, not object
     const handleError = (data: string | ErrorData) => {
       const message = typeof data === 'string' ? data : data.message;
@@ -390,6 +399,7 @@ export function useSocketEvents() {
     socket.on('turnOrderCountdown', handleTurnOrderCountdown);
     socket.on('gameState', handleGameState);
     socket.on('buyNotification', handleBuyNotification);
+    socket.on('gameNotification', handleGameNotification);
     socket.on('error', handleError);
     socket.on('meldCreated', handleMeldCreated);
     socket.on('actionRejected', handleActionRejected);
@@ -423,6 +433,7 @@ export function useSocketEvents() {
       socket.off('turnOrderCountdown', handleTurnOrderCountdown);
       socket.off('gameState', handleGameState);
       socket.off('buyNotification', handleBuyNotification);
+      socket.off('gameNotification', handleGameNotification);
       socket.off('error', handleError);
       socket.off('meldCreated', handleMeldCreated);
       socket.off('actionRejected', handleActionRejected);

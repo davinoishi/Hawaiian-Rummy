@@ -175,9 +175,13 @@ io.on('connection', (socket) => {
   });
 });
 
-// ===== DISCONNECTED PLAYER TURN HANDLER =====
-// Periodically check if the current player is disconnected and skip their turn
+// ===== ROOM TICK =====
+// One periodic pass per room that keeps time-based state honest:
+//   1. skip the turn of a disconnected player
+//   2. broadcast when a buy window expires (nothing else re-broadcasts on a timer)
+//   3. auto-play the turn of a connected-but-idle player
 import { broadcastGameState, setTournamentManager } from './socket-handlers/game-handler.js';
+import { BUY_WINDOW_DURATION } from '../shared/game-engine/constants.js';
 
 setInterval(() => {
   for (const room of gameManager.getAllRooms()) {
@@ -185,19 +189,56 @@ setInterval(() => {
     if (!state.gameStarted) continue;
     if (state.gamePhase === 'roundSummary' || state.gamePhase === 'gameOver') continue;
 
-    const currentPlayerId = state.players[state.currentPlayerIndex];
-    const isCurrentPlayerDisconnected = room.disconnectedPlayers.has(currentPlayerId);
+    // Restart the idle clock if the turn moved since the last tick.
+    gameManager.syncTurnClock(room.id);
 
-    if (isCurrentPlayerDisconnected) {
-      console.log(`[Room ${room.id}] Periodic check: Current player ${currentPlayerId} is disconnected, skipping turn`);
+    // --- 1. Disconnected player: skip their turn ---
+    const currentPlayerId = state.players[state.currentPlayerIndex];
+    if (room.disconnectedPlayers.has(currentPlayerId)) {
+      console.log(`[Room ${room.id}] Current player ${currentPlayerId} is disconnected, skipping turn`);
 
       // Cancel any staged melds
       if (state.gamePhase === 'meld') {
         gameManager.processAction(room.id, { type: 'CANCEL_MELDS', playerId: currentPlayerId });
       }
 
-      // Advance to next player
       if (gameManager.advanceToNextActivePlayer(room.id)) {
+        broadcastGameState(io, gameManager, room.id);
+      }
+      continue;
+    }
+
+    // --- 2. Buy window expiry ---
+    // isBuyWindowActive() is computed on read, so without this nobody learns the
+    // window closed until the next action. Fire exactly once per discard.
+    const discardTs = state.lastDiscardTimestamp;
+    if (
+      discardTs !== null &&
+      Date.now() - discardTs >= BUY_WINDOW_DURATION &&
+      room.buyWindowExpiryNotifiedFor !== discardTs
+    ) {
+      room.buyWindowExpiryNotifiedFor = discardTs;
+      broadcastGameState(io, gameManager, room.id);
+    }
+
+    // --- 3. Idle player: auto-play their turn ---
+    if (gameManager.isTurnIdleExpired(room.id)) {
+      const played = gameManager.autoPlayIdleTurn(room.id);
+
+      if (played) {
+        console.log(`[Room ${room.id}] Auto-played idle turn for ${played.playerName} (discarded ${played.cardDisplay})`);
+        io.to(room.id).emit('gameNotification', {
+          type: 'info',
+          message: `⏱ ${played.playerName} ran out of time - auto-discarded ${played.cardDisplay}`
+        });
+        broadcastGameState(io, gameManager, room.id);
+      } else if (gameManager.advanceToNextActivePlayer(room.id)) {
+        // Nothing legal to play (e.g. empty deck) - skip rather than stall.
+        console.log(`[Room ${room.id}] Could not auto-play idle turn, skipping to next player`);
+        io.to(room.id).emit('gameNotification', {
+          type: 'info',
+          message: `⏱ ${state.playerNames[currentPlayerId] || 'A player'} ran out of time - turn skipped`
+        });
         broadcastGameState(io, gameManager, room.id);
       }
     }

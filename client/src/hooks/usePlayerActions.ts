@@ -3,7 +3,7 @@
  * All actions are sent to the server via socket
  */
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback } from 'react';
 import { useSocketStore } from '../store/socket-store';
 import { useGameStore } from '../store/game-store';
 import { useUIStore } from '../store/ui-store';
@@ -17,31 +17,8 @@ export function usePlayerActions() {
     canDraw,
     canTakeDiscard,
     hasMetRequirements,
-    myHand,
-    gamePhase,
-    buyWindowActive,
-    buyWindowRemaining,
-    buyJustProcessed
+    gamePhase
   } = useGameStore();
-
-  // Track buy window expiration locally
-  const [localBuyWindowExpired, setLocalBuyWindowExpired] = useState(true);
-
-  useEffect(() => {
-    if (buyWindowActive && (buyWindowRemaining ?? 0) > 0) {
-      setLocalBuyWindowExpired(false);
-      const timer = setTimeout(() => {
-        setLocalBuyWindowExpired(true);
-      }, (buyWindowRemaining ?? 0) * 1000);
-      return () => clearTimeout(timer);
-    } else if (!buyWindowActive) {
-      setLocalBuyWindowExpired(true);
-    }
-  }, [buyWindowActive, buyWindowRemaining]);
-
-  // Compute local canTakeDiscard that accounts for buy window expiration
-  // Use server's canTakeDiscard if true, or fall back to local check when buy window expires by time
-  const localCanTakeDiscard = canTakeDiscard || (isMyTurn && gamePhase === 'draw' && !buyJustProcessed && localBuyWindowExpired);
 
   const {
     selectedCardIds,
@@ -77,14 +54,13 @@ export function usePlayerActions() {
       return;
     }
 
-    // Use local computed value which accounts for buy window expiration by time
-    if (!localCanTakeDiscard) {
+    if (!canTakeDiscard) {
       setErrorMessage('Cannot take from discard right now');
       return;
     }
 
     emit('takeDiscard');
-  }, [localCanTakeDiscard, emit, tutorialActive, isActionAllowed, setErrorMessage]);
+  }, [canTakeDiscard, emit, tutorialActive, isActionAllowed, setErrorMessage]);
 
   // Create a meld from selected cards
   const createMeld = useCallback((type: 'set' | 'run', wildcardPositions?: Record<string, string>) => {

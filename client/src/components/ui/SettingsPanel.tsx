@@ -4,7 +4,7 @@
 
 import { createPortal } from 'react-dom';
 import { useSettingsStore, type ThemeMode } from '../../store';
-import { useAudio } from '../../hooks';
+import { useAudio, useHaptics } from '../../hooks';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -23,6 +23,7 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
   } = useSettingsStore();
 
   const { playClick } = useAudio();
+  const { enabled: hapticsEnabled, supported: hapticsSupported, toggleEnabled: toggleHaptics, tap } = useHaptics();
 
   const isLight = resolvedTheme === 'light';
 
@@ -37,6 +38,13 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
     if (!soundEnabled) {
       setTimeout(() => playClick(), 50);
     }
+  };
+
+  const handleHapticsToggle = () => {
+    playClick();
+    // Buzz on the way *on* so the setting demonstrates itself.
+    if (!hapticsEnabled) setTimeout(() => tap(), 50);
+    toggleHaptics();
   };
 
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -83,6 +91,9 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             <span className={isLight ? 'text-emerald-900' : 'text-white'}>Sound Effects</span>
             <button
               onClick={handleSoundToggle}
+              role="switch"
+              aria-checked={soundEnabled}
+              aria-label="Sound Effects"
               className={`
                 relative w-12 h-6 rounded-full transition-colors
                 ${soundEnabled ? 'bg-emerald-500' : 'bg-gray-600'}
@@ -134,6 +145,33 @@ export function SettingsPanel({ isOpen, onClose }: SettingsPanelProps) {
             </span>
           </div>
         </div>
+
+        {/* Haptics - only offered where the device can actually vibrate */}
+        {hapticsSupported && (
+          <div className="mb-6">
+            <h3 className={`text-sm font-medium ${isLight ? 'text-emerald-800' : 'text-emerald-200'} mb-3`}>Haptics</h3>
+            <div className="flex items-center justify-between">
+              <span className={isLight ? 'text-emerald-900' : 'text-white'}>Vibration</span>
+              <button
+                onClick={handleHapticsToggle}
+                role="switch"
+                aria-checked={hapticsEnabled}
+                aria-label="Vibration"
+                className={`
+                  relative w-12 h-6 rounded-full transition-colors
+                  ${hapticsEnabled ? 'bg-emerald-500' : 'bg-gray-600'}
+                `}
+              >
+                <span
+                  className={`
+                    absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform
+                    ${hapticsEnabled ? 'translate-x-6' : 'translate-x-0'}
+                  `}
+                />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Theme Settings */}
         <div className="mb-6">

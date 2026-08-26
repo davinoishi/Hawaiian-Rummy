@@ -241,6 +241,19 @@
     @apply border-emerald-300/50 shadow-lg;
   }
 
+  /* Opaque panel variant.
+     .panel is translucent by design, which is fine for panels sitting in the
+     page flow but wrong for one pinned above the board - the content behind it
+     (the action bar) reads straight through. Used by the buy prompt. */
+  :root:not(.light):not([data-theme="light"]) .panel.panel-solid {
+    @apply bg-emerald-900;
+  }
+
+  :root.light .panel.panel-solid,
+  [data-theme="light"] .panel.panel-solid {
+    background-color: theme('colors.emerald.50');
+  }
+
   /* Tooltip */
   .tooltip {
     @apply absolute z-50 px-2 py-1 text-sm rounded;

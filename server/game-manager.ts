@@ -25,7 +25,8 @@ import {
   getGameWinner,
   getAvailableActions
 } from '../shared/game-engine/game-state';
-import { ROUND_REQUIREMENTS, BUY_WINDOW_DURATION } from '../shared/game-engine/constants';
+import { ROUND_REQUIREMENTS, BUY_WINDOW_DURATION, TURN_IDLE_TIMEOUT } from '../shared/game-engine/constants';
+import { getCardPoints, getCardDisplay, isWildcard } from '../shared/game-engine/card-utils';
 
 /**
  * Grace period for disconnected players in milliseconds (45 seconds)
@@ -54,6 +55,13 @@ export interface Room {
   createdAt: number;
   password?: string;
   playerProfileIds: Map<string, string>;  // Map socket ID to profile ID
+
+  /** Timestamp of the last successful action in this room, used by the idle-turn timer */
+  turnActivityAt: number;
+  /** currentPlayerIndex the idle clock is running for, so turn changes restart it */
+  turnClockPlayerIndex: number;
+  /** lastDiscardTimestamp whose buy-window expiry has already been broadcast (avoids re-broadcasting) */
+  buyWindowExpiryNotifiedFor: number | null;
 }
 
 /**
@@ -82,7 +90,10 @@ export class GameManager {
       disconnectedPlayers: new Map(),
       createdAt: Date.now(),
       password: password || undefined,
-      playerProfileIds: new Map()
+      playerProfileIds: new Map(),
+      turnActivityAt: Date.now(),
+      turnClockPlayerIndex: -1,
+      buyWindowExpiryNotifiedFor: null
     };
     this.rooms.set(id, room);
     return room;
@@ -244,9 +255,19 @@ export class GameManager {
       };
     }
 
+    // Whose turn it was before the action ran - the action may advance the turn.
+    const actingPlayerWasCurrent = room.state.players[room.state.currentPlayerIndex] === action.playerId;
+
     const result = processAction(room.state, action);
     if (result.success) {
       room.state = result.newState;
+
+      // Only the current player's own actions restart the idle clock. An
+      // opponent reordering their hand or requesting a buy is not evidence that
+      // the player we are waiting on is still at the keyboard.
+      if (actingPlayerWasCurrent) {
+        room.turnActivityAt = Date.now();
+      }
     }
     return result;
   }
@@ -291,13 +312,7 @@ export class GameManager {
       return { playerId, cantBuy, wontBuy, skip: cantBuy || wontBuy };
     });
 
-    const noOneWouldBuy = playerStatuses.every(p => p.skip);
-
-    console.log(`[BUY WINDOW] shouldSkipBuyWindow: room=${roomId}, round=${state.currentRound}, maxBuys=${maxBuys}`);
-    console.log(`[BUY WINDOW] playerStatuses:`, JSON.stringify(playerStatuses));
-    console.log(`[BUY WINDOW] noOneWouldBuy: ${noOneWouldBuy}`);
-
-    return noOneWouldBuy;
+    return playerStatuses.every(p => p.skip);
   }
 
   /**
@@ -330,6 +345,138 @@ export class GameManager {
 
     const elapsed = Date.now() - room.state.lastDiscardTimestamp;
     return Math.max(0, Math.ceil((BUY_WINDOW_DURATION - elapsed) / 1000));
+  }
+
+  /**
+   * Restart the idle clock when the turn moves to a different player.
+   *
+   * The turn advances through several paths (a normal discard, a skipped
+   * disconnect, an AI takeover, a new round), so rather than resetting the
+   * clock in each of them we detect the change here and let the caller - the
+   * server tick - drive it.
+   */
+  syncTurnClock(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+
+    if (room.turnClockPlayerIndex !== room.state.currentPlayerIndex) {
+      room.turnClockPlayerIndex = room.state.currentPlayerIndex;
+      room.turnActivityAt = Date.now();
+    }
+  }
+
+  /**
+   * Whether the idle-turn timer applies to the current player right now.
+   *
+   * The timer only guards *connected humans*. AI players are driven by
+   * AIManager, and disconnected players are already handled by the
+   * DISCONNECT_GRACE_PERIOD path in room-handler.
+   */
+  private isIdleTimerApplicable(room: Room): boolean {
+    const state = room.state;
+    if (!state.gameStarted) return false;
+    if (state.tutorialMode) return false;
+    if (state.gamePhase === 'roundSummary' || state.gamePhase === 'gameOver') return false;
+
+    const currentPlayerId = state.players[state.currentPlayerIndex];
+    if (!currentPlayerId) return false;
+    if (room.aiPlayerIds.includes(currentPlayerId)) return false;
+    if (room.disconnectedPlayers.has(currentPlayerId)) return false;
+
+    // Only enforce the clock when someone is actually waiting. A solo player
+    // against AI can take as long as they like.
+    const connectedHumans = state.players.filter(
+      id => !room.aiPlayerIds.includes(id) && !room.disconnectedPlayers.has(id)
+    );
+    if (connectedHumans.length < 2) return false;
+
+    return true;
+  }
+
+  /**
+   * Seconds remaining before the current player's turn is auto-played.
+   * Returns 0 when the timer does not apply.
+   */
+  getTurnTimeRemaining(roomId: string): number {
+    const room = this.rooms.get(roomId);
+    if (!room || !this.isIdleTimerApplicable(room)) return 0;
+
+    const elapsed = Date.now() - room.turnActivityAt;
+    return Math.max(0, Math.ceil((TURN_IDLE_TIMEOUT - elapsed) / 1000));
+  }
+
+  /**
+   * Whether the current player has been idle past TURN_IDLE_TIMEOUT.
+   */
+  isTurnIdleExpired(roomId: string): boolean {
+    const room = this.rooms.get(roomId);
+    if (!room || !this.isIdleTimerApplicable(room)) return false;
+
+    return Date.now() - room.turnActivityAt >= TURN_IDLE_TIMEOUT;
+  }
+
+  /**
+   * Pick the card an auto-played turn should discard.
+   *
+   * Prefers the highest-point non-wild card: that trims the most points off the
+   * idle player's round score without throwing away a wildcard they will want
+   * if they come back. Falls back to the first card if the hand is all wilds.
+   */
+  private chooseAutoDiscard(hand: Card[]): Card | undefined {
+    if (hand.length === 0) return undefined;
+
+    const nonWild = hand.filter(card => !isWildcard(card));
+    const candidates = nonWild.length > 0 ? nonWild : hand;
+
+    return candidates.reduce((best, card) =>
+      getCardPoints(card) > getCardPoints(best) ? card : best
+    );
+  }
+
+  /**
+   * Auto-play the current player's turn after they have gone idle.
+   *
+   * Plays the minimum legal turn - draw from the deck, then discard - so hand
+   * sizes stay correct rather than skipping the turn outright. Any staged melds
+   * that do not meet the round requirement are cancelled first, since
+   * canDiscard() blocks a discard while incomplete melds are on the table.
+   *
+   * Returns a summary for the notification, or null if nothing could be played
+   * (in which case the caller should fall back to advancing the turn).
+   */
+  autoPlayIdleTurn(roomId: string): { playerId: string; playerName: string; cardDisplay: string } | null {
+    const room = this.rooms.get(roomId);
+    if (!room || !this.isIdleTimerApplicable(room)) return null;
+
+    const playerId = room.state.players[room.state.currentPlayerIndex];
+    const playerName = room.state.playerNames[playerId] || 'Unknown';
+
+    // Clear incomplete melds so the discard below is allowed.
+    const playerState = room.state.playerStates[playerId];
+    if (playerState && playerState.melds.length > 0 && !playerState.hasMetRequirements) {
+      this.processAction(roomId, { type: 'CANCEL_MELDS', playerId });
+    }
+
+    // Draw only if we are still in the draw phase - an idle player may have
+    // already drawn and then stalled while deciding what to meld.
+    if (room.state.gamePhase === 'draw') {
+      const drawResult = this.processAction(roomId, { type: 'DRAW_CARD', playerId });
+      if (!drawResult.success) {
+        // Deck is empty or the draw is otherwise blocked; let the caller skip.
+        return null;
+      }
+    }
+
+    const card = this.chooseAutoDiscard(room.state.playerStates[playerId]?.hand || []);
+    if (!card) return null;
+
+    const discardResult = this.processAction(roomId, { type: 'DISCARD', playerId, cardId: card.id });
+    if (!discardResult.success) {
+      console.log(`[Room ${roomId}] Auto-play discard failed for ${playerName}: ${discardResult.error}`);
+      return null;
+    }
+
+    return { playerId, playerName, cardDisplay: getCardDisplay(card) };
   }
 
   /**
@@ -449,6 +596,7 @@ export class GameManager {
       buyWindowActive: this.isBuyWindowActive(roomId),
       buyWindowRemaining: this.getBuyWindowRemaining(roomId),
       buyJustProcessed: state.buyJustProcessed,
+      turnTimeRemaining: this.getTurnTimeRemaining(roomId),
       tutorialMode: state.tutorialMode || false,
       tutorialStep: state.tutorialStep || 0
     };

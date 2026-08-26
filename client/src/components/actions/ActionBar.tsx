@@ -2,7 +2,7 @@
  * ActionBar - Main action buttons for the player
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useGameStore, useUIStore, useSettingsStore } from '../../store';
 import { usePlayerActions, useAudio, useHaptics } from '../../hooks';
 
@@ -29,10 +29,34 @@ export function ActionBar() {
   const isLight = resolvedTheme === 'light';
 
   const selectedCount = selectedCardIds.length;
-  const canCreateSet = selectedCount >= 3;
-  const canCreateRun = selectedCount >= 4;
-  const canDiscard = selectedCount === 1 && isMyTurn && !canDraw;
-  const canLayoff = hasMetRequirements && selectedCount >= 1 && isMyTurn;
+  const mustDrawFirst = !!canDraw;
+  const canCreateSet = selectedCount >= 3 && !mustDrawFirst;
+  const canCreateRun = selectedCount >= 4 && !mustDrawFirst;
+  const canDiscard = selectedCount === 1 && isMyTurn && !mustDrawFirst;
+
+  // A greyed-out button with no explanation is the most common source of
+  // "why can't I do anything?" - say the reason out loud instead.
+  const meldReason = (minCards: number): string | undefined => {
+    if (mustDrawFirst) return 'Draw a card first';
+    if (selectedCount < minCards) return `Select at least ${minCards} cards`;
+    return undefined;
+  };
+  const setReason = meldReason(3);
+  const runReason = meldReason(4);
+  const discardReason = mustDrawFirst
+    ? 'Draw a card first'
+    : selectedCount === 0
+      ? 'Select a card to discard'
+      : selectedCount > 1
+        ? 'Select exactly one card to discard'
+        : undefined;
+
+  // The single most useful hint, shown inline under the buttons.
+  const hint = mustDrawFirst
+    ? 'Draw from the deck or take the discard to start your turn.'
+    : selectedCount === 0
+      ? 'Tap cards to select them, then create a meld or discard.'
+      : null;
 
   // Handle creating a set
   const handleCreateSet = useCallback(() => {
@@ -117,6 +141,7 @@ export function ActionBar() {
         <button
           onClick={handleCreateSet}
           disabled={!canCreateSet}
+          title={setReason ?? 'Create a set from the selected cards'}
           className="btn-secondary"
         >
           Create Set ({selectedCount >= 3 ? selectedCount : '3+'})
@@ -125,6 +150,7 @@ export function ActionBar() {
         <button
           onClick={handleCreateRun}
           disabled={!canCreateRun}
+          title={runReason ?? 'Create a run from the selected cards'}
           className="btn-secondary"
         >
           Create Run ({selectedCount >= 4 ? selectedCount : '4+'})
@@ -139,6 +165,14 @@ export function ActionBar() {
           </button>
         )}
       </div>
+
+      {/* Inline hint. A title attribute never appears on a touch device, so the
+          most relevant reason is rendered as text too. */}
+      {hint && !layoffMode && (
+        <p className={`text-center text-sm ${isLight ? 'text-emerald-700' : 'text-emerald-200'}`}>
+          {hint}
+        </p>
+      )}
 
       {/* Layoff mode instructions */}
       {layoffMode && (
@@ -178,6 +212,7 @@ export function ActionBar() {
         <button
           onClick={handleDiscard}
           disabled={!canDiscard}
+          title={discardReason ?? 'Discard the selected card and end your turn'}
           className="btn-danger"
         >
           Discard

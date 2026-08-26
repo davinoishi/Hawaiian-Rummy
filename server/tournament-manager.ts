@@ -662,11 +662,15 @@ export class TournamentManager {
         return;
       }
 
-      roomId = this.createTournamentGameRoom(tournament, hostSocketId);
-      if (!roomId) {
+      // createTournamentGameRoom returns string | null, but roomId here is
+      // string | undefined (it came from tournament.activeRoomId), so narrow
+      // through a local before assigning.
+      const newRoomId = this.createTournamentGameRoom(tournament, hostSocketId);
+      if (!newRoomId) {
         console.error(`[TournamentManager] Failed to create room for tournament ${tournamentId}`);
         return;
       }
+      roomId = newRoomId;
 
       tournament.activeRoomId = roomId;
       this.roomToTournament.set(roomId, tournamentId);
