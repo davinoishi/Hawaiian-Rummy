@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    image: hawaiian-rummy:latest
+    container_name: hawaiian-rummy
+    restart: unless-stopped
+    ports:
+      # host 3002 -> container 3001 (3001 is taken by sharks-news-aggregator-web)
+      - "3002:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
