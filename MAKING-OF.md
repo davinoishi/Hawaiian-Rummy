@@ -715,3 +715,17 @@ concurrent March Madness games is a guess, not measured.
 
 > **The lesson:** before writing up a feature request, grep for its nouns. Here the spec
 > had been written eight months earlier, in the types file.
+
+### Shipping it (PR #17)
+
+Committed on `claude/roadmap-tournament-ideas` (`abef885`). `git push` succeeded, but
+printed `error: could not write config file .git/config: Operation not permitted` twice:
+the sandbox protects `.git/config`, so the local branch has no upstream recorded.
+`git ls-remote` confirmed the branch was on GitHub.
+
+`gh pr create` and `gh api …/pulls` both failed with the same
+`x509: OSStatus -26276` as the review. The PR was opened (#17) by POSTing to the REST API
+with `curl`, authenticated with `gh auth token` passed in a header and never printed.
+WRONG THEORY: the first `gh api` call in the review worked, so I took the TLS failure for
+a GraphQL-only problem. Every later `gh` call, REST included, failed, so it's `gh` itself
+in this sandbox, not the endpoint. Not diagnosed further.
