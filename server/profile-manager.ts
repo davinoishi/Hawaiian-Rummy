@@ -219,14 +219,15 @@ export class ProfileManager {
   }
 
   getAIProfileId(aiName: string): string | undefined {
-    // Map AI names to profile IDs
+    // Map AI names to profile IDs. Display names carry an emoji prefix that has changed
+    // before ('🤖 Mango' -> '🥭 Mango'), so match on the name after any leading non-letters.
     const nameToId: Record<string, string> = {
       'Mango': 'ai-mango',
       'Pineapple': 'ai-pineapple',
       'Coconut': 'ai-coconut',
       'Papaya': 'ai-papaya'
     };
-    return nameToId[aiName];
+    return nameToId[aiName.replace(/^[^\p{L}]+/u, '').trim()];
   }
 
   // ===== PROFILE CRUD =====

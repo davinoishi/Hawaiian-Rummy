@@ -42,15 +42,16 @@ function recordGameCompletion(
   state: GameState,
   gameManager: GameManager
 ): void {
-  // Generate a unique game ID
-  const gameId = `game-${roomId}-${Date.now()}`;
-
-  // Check if already recorded
-  if (recordedGames.has(gameId.slice(0, -13))) { // Check without timestamp
-    console.log(`[Room ${roomId}] Game already recorded, skipping`);
+  // gameOver is broadcast many times per game, so record each game once.
+  // Key on the start time as well as the room, so a rematch in the same room still counts.
+  const startedAt = gameManager.getGameStartedAt(roomId);
+  const recordKey = `${roomId}-${startedAt ?? 'unknown'}`;
+  if (recordedGames.has(recordKey)) {
     return;
   }
-  recordedGames.add(roomId);
+  recordedGames.add(recordKey);
+
+  const gameId = `game-${roomId}-${Date.now()}`;
 
   console.log(`[Room ${roomId}] Recording completed game...`);
 
@@ -77,22 +78,17 @@ function recordGameCompletion(
     const playerName = state.playerNames[result.playerId] || 'Unknown';
     const placement = playerResults.indexOf(result) + 1;
 
-    let profileId: string | undefined;
-
-    if (isAI) {
-      // AI players have pre-created profiles
-      profileId = profileManager.getAIProfileId(playerName.replace('🤖 ', ''));
-    } else {
-      // Human players - check if they have a profile ID stored
-      profileId = gameManager.getPlayerProfileId(roomId, result.playerId);
-    }
+    // A human's profile comes first: it follows them if they disconnect and an AI takes over.
+    // Otherwise an AI player maps to its pre-created profile by name.
+    const humanProfileId = gameManager.getPlayerProfileId(roomId, result.playerId);
+    const profileId = humanProfileId ?? (isAI ? profileManager.getAIProfileId(playerName) : undefined);
 
     // Only include players with valid profiles
     if (profileId) {
       resultsWithProfiles.push({
         profileId,
         nickname: playerName,
-        isAI,
+        isAI: !humanProfileId,
         finalScore: result.score,
         placement,
         won: placement === 1,
@@ -104,7 +100,8 @@ function recordGameCompletion(
 
   if (resultsWithProfiles.length > 0) {
     const totalRounds = state.currentRound + 1;
-    const durationMinutes = 0; // TODO: Track actual game duration
+    // 0 when the start time is unknown (a game restored from a save)
+    const durationMinutes = startedAt ? Math.round((Date.now() - startedAt) / 60000) : 0;
     const aiCount = resultsWithProfiles.filter(r => r.isAI).length;
     const humanCount = resultsWithProfiles.filter(r => !r.isAI).length;
 

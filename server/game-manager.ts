@@ -53,6 +53,8 @@ export interface Room {
   aiPlayerIds: string[];
   disconnectedPlayers: Map<string, DisconnectedPlayer>;
   createdAt: number;
+  /** When the current game started (set by startGame), used for duration and to tell rematches apart */
+  gameStartedAt: number | null;
   password?: string;
   playerProfileIds: Map<string, string>;  // Map socket ID to profile ID
 
@@ -89,6 +91,7 @@ export class GameManager {
       aiPlayerIds: [],
       disconnectedPlayers: new Map(),
       createdAt: Date.now(),
+      gameStartedAt: null,
       password: password || undefined,
       playerProfileIds: new Map(),
       turnActivityAt: Date.now(),
@@ -239,7 +242,15 @@ export class GameManager {
     if (room.state.players.length < 1) return false;
 
     room.state = startGame(room.state);
+    room.gameStartedAt = Date.now();
     return true;
+  }
+
+  /**
+   * When the current game in a room started, or null if unknown (e.g. restored from a save)
+   */
+  getGameStartedAt(roomId: string): number | null {
+    return this.rooms.get(roomId)?.gameStartedAt ?? null;
   }
 
   /**
