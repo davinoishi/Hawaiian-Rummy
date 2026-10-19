@@ -657,3 +657,61 @@ shipped a reordering feature and an auto-reordering feature on the same array on
 day and tested them in separate harnesses. The cheap check that would have caught it —
 "turn on feature A, then use feature B" — took about four minutes to write once someone
 pointed at it.
+
+---
+
+## Session 5 — 2026-10-18 — Backlog review, and a tournament spec that was already written
+
+No code changed. Two things: a review of everything open, and a place to keep Davin's
+tournament feedback.
+
+### The review
+
+Open on GitHub: #11, #12, #14, #15, #16, and Dependabot PR #9. Read with
+`gh api 'repos/davinoishi/Hawaiian-Rummy/issues?state=open'` (the `gh issue list` GraphQL
+path failed with `tls: failed to verify certificate: x509: OSStatus -26276`; later `gh api`
+calls failed the same way, so issue comments and PR #9 were read with unauthenticated
+`curl` against the public REST API).
+
+- #11 is already done: PR #13 (`e064715`) added the Dockerfile and compose file on 6 Oct,
+  but the issue was never closed.
+- #14 still applies on `main`: `game-handler.ts:84` strips `'🤖 '` while `AI_NAMES` are
+  `'🥭 Mango'` etc. `durationMinutes` is still hardcoded to `0`.
+- #15 was narrowed down in a 12 Oct comment: on an iPhone, a second tap replaces the
+  selected card instead of adding to it.
+- PR #9 isn't redundant even though May's single bumps (#1, #3, #5) were closed:
+  `package.json` on `main` is still on `cors ^2.8.5`, `express ^5.1.0`, `socket.io ^4.8.1`.
+- Session 4's "Still open" list is still all open (both `package.json`s say `2.0.0`,
+  `CACHE_NAME` is `'hawaiian-rummy-v1'`, no client ESLint config).
+
+Gap: this file has nothing for the 6 Oct deploy-files work or the 11–12 Oct investigation
+that filed #14–#16. Not reconstructed here.
+
+### Tournament feedback → ROADMAP.md
+
+Davin sent tournament ideas (March Madness 64-player brackets, a 10-game Marathon, First
+to 5000 loses; hosting from the profile page, invites, per-tournament leaderboard, waiting
+for players, AI filling in for absentees) to keep, explicitly **not** to build yet. They
+went into a new `ROADMAP.md`, along with the still-live "Future" items from README,
+`AI_IMPLEMENTATION.md` and `TUTORIAL_IMPLEMENTATION_GUIDE.md` (minus tournament mode, which
+shipped, and offline mode, which was removed).
+
+The turn: I started out treating these as new ideas. `shared/tournament-types.ts` shows
+the v2.5.0 work (`bbadf9c`, Feb 2026) had already designed all three modes, with the same
+names, the 5000 threshold, island brackets and human seeding. Only Marathon got built:
+`createTournament()` hardcodes `type: 'marathon'`. The AI-substitute path is half there:
+`reclaimSlot()` reads `substituteForProfileId`, nothing ever sets it, and the client never
+emits `reclaimSlot`. So ROADMAP.md maps each idea to its state in the code instead of
+listing it as new.
+
+Two things in the feedback differ from the code, and are recorded as questions rather
+than changed silently: "each bracket is 4 games, the winner goes to the Final Four" needs
+a fifth bracket-final game (the types already have one), and "Kawaii" is recorded as
+Kauai, matching `BRACKET_NAMES`.
+
+**Verified vs assumed:** the code states in ROADMAP.md come from reading and grepping the
+source on `main` at `e064715`. Nothing was run. The concern about pi5-ai2 load for 16
+concurrent March Madness games is a guess, not measured.
+
+> **The lesson:** before writing up a feature request, grep for its nouns. Here the spec
+> had been written eight months earlier, in the types file.
