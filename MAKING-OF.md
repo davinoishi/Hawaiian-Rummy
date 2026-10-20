@@ -1078,3 +1078,25 @@ containerisation. Archived to `/root/hawaiian-rummy-data.fresh-1783985149.tar.gz
 bytes, sha256 of both files checked against the originals), then `rm -r`. Afterwards
 `git status -sb` on the Pi was clean, with no untracked files, and the container
 stayed `Up (healthy)`.
+
+---
+
+## Session 11 — 2026-10-20 — #14 checked in production; guests stay unrecorded
+
+Davin finished a game on the deployed build (587a7c5). Read on pi5-ai2:
+- **`completed-games.json`:** 7 → **8**, the first new record since 11 Feb:
+  `game-0KFCL4-1792513935767`, 10 rounds, `durationMinutes: 48`, matching the room's
+  15:44:24 → 16:32:15 UTC in the log.
+- **`server-stats.json`:** `totalGamesCompleted: 8`.
+- **Log:** `Recorded game stats for 3 players (3 AI, 0 human)`, written once.
+- **#16 in production:** no AI `taking turn` after that line. The only two `phase: gameOver`
+  lines were the server's own final broadcast.
+
+The winner (placement 1) wasn't in the record. The log shows why:
+`createRoom ... playerName: Test10-20 ... profileId: undefined`. Davin played as a guest,
+not signed in, and `recordGameCompletion()` only keeps players with a profile.
+
+**Decision (Davin):** keep it that way. Only signed-in players are recorded, and guests'
+games aren't. This answers the question left open in #14 ("Decide whether games by players
+who aren't signed in should be recorded"). Davin will sign in to his own profile to have
+his games count.
