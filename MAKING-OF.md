@@ -729,3 +729,117 @@ with `curl`, authenticated with `gh auth token` passed in a header and never pri
 WRONG THEORY: the first `gh api` call in the review worked, so I took the TLS failure for
 a GraphQL-only problem. Every later `gh` call, REST included, failed, so it's `gh` itself
 in this sandbox, not the endpoint. Not diagnosed further.
+
+---
+
+## Session 6 — 2026-10-18/19 — #14 (games not recorded) and #15 (iPhone can't meld)
+
+Two fixes, on separate branches: `claude/fix-game-recording` (PR #18) and
+`claude/fix-ios-card-selection` (this entry's branch). This entry lives on the second so the
+two PRs don't conflict on this file.
+
+### #14: completed games not recorded
+
+The cause was as the issue said: `recordGameCompletion()` stripped `'🤖 '` before looking
+up the AI profile, but since v2.4.0 the names are `'🥭 Mango'` etc. `getAIProfileId()` now
+ignores any leading non-letter prefix.
+
+**A bug the issue didn't mention, found by testing on `main` first.** A script
+(scratchpad, not committed) drove games to `gameOver` through the real
+`broadcastGameState()` and `ProfileManager`, in a scratch copy of the repo so `data/`
+started empty, once against `git archive origin/main` and once against the fix:
+
+```
+main:  A games: 5   (signed-in human + 3 AI, gameOver broadcast 5 times -> 5 records)
+       B: "No players with profiles to record"   (guest + 3 AI)
+       D: "No players with profiles to record"   (human converted to AI)
+       profile Tester gamesPlayed: 8   after 3 games
+fix:   A 1 record, 4 players, dur=23 | B 1 record, 3 AI | C rematch: +1 | D human kept as human
+```
+
+The duplicate check compared `gameId.slice(0, -13)` (`game-<room>-`) against a set that
+stored `<room>`, so it never matched. Every `gameOver` broadcast recorded the game
+again. It never showed because since February almost nothing was recorded at all. Fixing
+only the AI lookup would have turned that on: with #16's AI loop broadcasting every
+~1.5 s after a game ends, one game could have been recorded hundreds of times. The check
+now keys on room + `gameStartedAt` (new field on `Room`, set in `startGame`), so a rematch
+in the same room still counts. The same field replaces the hardcoded
+`durationMinutes = 0`.
+
+Also checked before trusting the human path: `convertToAIPlayer()` moves the profile
+mapping to the new AI id (`updatePlayerSocketId`), so a human who disconnects and is
+taken over is now looked up by profile first and recorded as a human.
+
+Not checked: whether the 7 February games in production's `completed-games.json` are
+duplicates. Not deployed.
+
+### #15: on iPhone only one card stays selected
+
+**Getting a real WebKit browser took three attempts.** Playwright isn't installed, and
+`xcrun simctl boot` from the sandbox fails with `CoreSimulatorService connection became
+invalid`. Davin booted the simulator himself. The tool attached to an **iPhone 18 Pro**
+(the model in the report), not the iPhone 17 Pro the boot command named. The game ran
+from a scratch copy on port 3101, served through a temporary `.claude/launch.json` entry
+(removed afterwards).
+
+WRONG THEORY 1: "a tap toggles twice: `onTouchEnd` selects, then the synthetic `click`
+runs `onClick` and deselects." Reading the code supports this, but it predicts that no
+card ever stays selected, and Davin saw exactly one. I didn't ship a fix on it.
+
+WRONG THEORY 2, briefly: "the tool's taps land one touch late." The first screenshots
+showed a draw and a selection appearing only after the *next* tap. In fact the screenshot
+just lags the simulator by a second or two. Waiting ~2 s before each screenshot made it
+consistent.
+
+**The probe settled it.** A script added to the scratch copy's built `index.html`
+logged every touch/pointer/mouse/click event, with the "N selected" count, in a fixed
+overlay. A plain button tap: `touchend` then, within 10 ms, `mouseover mousedown mouseup
+click`. On cards, before the fix:
+
+```
+100.23 touchend   A♣  sel=1
+100.23 mouseover  A♣  sel=1          <- iOS stops here: no click on this tap
+112.01 touchend   8♥  sel=2
+112.06 mousedown  8♥  sel=1
+112.06 click      8♥  sel=1          <- the click deselects the second card
+```
+
+So theory 1 was right about the mechanism and wrong about what happens. iOS sometimes
+holds the click back. Most likely its rule for taps that change the page (assumed from
+the pattern, not confirmed). That's why the first card stuck and every later one
+flipped back.
+
+Fix: `handleTouchEnd` calls `e.preventDefault()` (if cancelable) in the tap branch, which
+stops the emulated mouse events and click. The other option, dropping the touch path and
+relying on `click`, would have broken the first tap, which got no click at all.
+
+After the fix, same simulator:
+
+```
+96.97  touchend K♠ sel=1   98.57 touchend K♥ sel=2   109.40 touchend 2♦ sel=3   (no click after any)
+[SERVER] createMeld result: success=true            -> "Your Melds: SET K♠ K♥ 2♦"
+```
+
+Tapping a selected card twice gave `sel=1` then `sel=0`. A horizontal `touch_path` drag
+moved 9♠ from slot 1 to slot 3. The Draw button still receives its click. Client
+`tsc --noEmit` is clean. `npm ci` in `client/` was needed first (`client/node_modules` was
+missing). `npm run build` changed only the JS bundle; the CSS hash was unchanged.
+
+Not tested: desktop mouse clicks after the fix (that code path is unchanged), a real
+iPhone, Android.
+
+Why August missed it: every mobile check ran in Chromium emulating a Pixel 5, and the
+touch tests there drove events directly rather than through the browser's tap handling.
+
+### Correction to session 5
+
+Session 5 says every `gh` call after the first failed TLS verification. The final
+`gh pr merge 17` succeeded. It ran right after the `curl` merge attempt was refused by
+the auto-mode permission check. In this session `gh pr create` failed again with
+`x509: OSStatus -26276`, so PR #18 was opened through the REST API with `curl`, as before.
+`gh` in this sandbox is intermittent, not dead.
+
+> **The lesson:** a theory that explains the bug but predicts the wrong symptom is not
+> the cause yet. Here the mechanism was right and the prediction wrong, and only an event
+> log in the real browser showed the missing piece: iOS sometimes sends the click and
+> sometimes doesn't.
