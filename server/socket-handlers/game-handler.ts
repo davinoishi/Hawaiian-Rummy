@@ -229,20 +229,32 @@ async function determineTurnOrder(
     await sleep(position < 4 ? 1500 : 1000);
   }
 
+  // The order was drawn from the players present when the animation began, and a
+  // player can leave during it: the game hasn't started, so a disconnect removes
+  // them outright. Writing the stale list back would re-seat them as a ghost with
+  // no name, not AI and never marked disconnected, whose every turn waits out the
+  // idle timeout. Keep only players still in the room.
+  const currentState = gameManager.getGameState(roomId);
+  if (!currentState) return;
+  const finalOrder = selectedOrder.filter(id => currentState.players.includes(id));
+  if (finalOrder.length < selectedOrder.length) {
+    console.log(`[Room ${roomId}] Dropping ${selectedOrder.length - finalOrder.length} player(s) who left during turn order`);
+  }
+
   // Update game state with new order
-  gameManager.setPlayerOrder(roomId, selectedOrder);
+  gameManager.setPlayerOrder(roomId, finalOrder);
 
   // Send final result
   io.to(roomId).emit('turnOrderUpdate', {
     phase: 'final',
-    selectedOrder: selectedOrder.map((id, idx) => ({
+    selectedOrder: finalOrder.map((id, idx) => ({
       playerId: id,
       name: state.playerNames[id] || 'Unknown',
       position: idx + 1
     }))
   });
 
-  console.log(`[Room ${roomId}] Turn order determined:`, selectedOrder.map(id =>
+  console.log(`[Room ${roomId}] Turn order determined:`, finalOrder.map(id =>
     state.playerNames[id] || 'Unknown'
   ));
 

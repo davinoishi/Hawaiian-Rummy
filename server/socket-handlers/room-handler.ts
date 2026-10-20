@@ -212,7 +212,9 @@ export function setupRoomHandlers(socket: Socket, deps: RoomHandlerDeps) {
 
     const state = gameManager.getGameState(roomId);
 
-    if (state?.gameStarted) {
+    // Turn order is drawn from the players present when it starts, so a player who
+    // joined during the animation would be left out of the final order.
+    if (state?.gameStarted || state?.gamePhase === 'turnOrder') {
       socket.emit('gameAlreadyStarted');
       if (callback) callback({ error: 'Game already started' });
       return;
