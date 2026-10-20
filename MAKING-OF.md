@@ -999,3 +999,66 @@ about a second.
 > **The lesson:** "it falls back to the idle timer" was a guess about a fallback I hadn't
 > read. The fallback had its own condition, and that condition turned a slow game into a
 > stuck one.
+
+---
+
+## Session 10 — 2026-10-20 — Deploying #14, #15, #16, room release and the ghost-seat fix
+
+PRs #19–#22 were merged at Davin's request. `gh pr merge` failed TLS verification
+(`x509: OSStatus -26276`) five times in a row. The merges went through the REST merge
+endpoint with `curl`, each pinned to its PR's head sha (`3d1d57c`, `d6fa1aa`, `bf4b18a`,
+`587a7c5`). The four PRs touched disjoint files. On the merged `main`: server and client
+`tsc` clean, and the session 7 and 8 scripts reproduced their numbers (gameOver loop 0/0;
+release rule picks only `CONVERTED`).
+
+Deployed to pi5-ai2 (`guest` network, `/root/Hawaiian-Rummy`) through the noBGP MCP
+`command` tool, as root.
+
+**Before.** Pi checkout at `e064715`, container up 12 days from an image built about 7
+weeks earlier. Was anyone playing? The obvious probes gave wrong answers first:
+
+- WRONG READING: `docker logs --since 15m` and `--since 24h` both returned **0 lines**,
+  while `docker logs --tail 5` showed lines from that minute. `--since` isn't usable on
+  this host.
+- WRONG READING: a full `docker logs -t` returned 120,674 lines ending **7 Oct 18:21**,
+  from a json log file of **276 MB** last written that day. A full read stops partway;
+  only `--tail` reaches the present. Cause not investigated.
+- My own awk "last 30 min" filter then counted all 20,000 tail lines as recent, because
+  `mktime` read the UTC timestamps as local time. Discarded.
+
+What the tail actually showed: 20,000 lines spanning 02:46–04:50 UTC, **19,747 of them
+the #16 loop** (`davin` and `🥭 Mango` "taking turn (phase: gameOver)"), so about 160
+lines a minute or 230,000 a day. That's two orders of magnitude above the issue's guess
+of ~2,900/day. The other 253 were the healthcheck's `page_view` every 30 s. No client
+connections, so a restart dropped nobody.
+
+**Backup.** `/root/hawaiian-rummy-data-20261020-045049.tar.gz`, 4 files, each checked by
+sha256 against the live copy (all OK).
+
+**Deploy.** `git pull --ff-only origin main` → `587a7c5` (11 files, +529/−26). Then
+`docker compose up -d --build`, run detached via `setsid` with output to
+`/root/hawaiian-rummy-deploy.log`: `exit=0`, finished 04:53:01 UTC.
+
+**After, verified:**
+- `Up (healthy)`. Startup: `Loaded 5 profiles`, `Loaded 7 completed games`,
+  `Loaded 1 active tournaments`, the same counts as before.
+- All three server fixes present in the container (grep). **0** `phase: gameOver` lines
+  after start.
+- `curl 127.0.0.1:3002/` serves `index-DYfyiy9S.js`, the same hash as the committed
+  bundle, although the image builds the client from source. So the committed `public/`
+  matches a fresh build.
+- Signed-out fetch of the noBGP service "Hawaiian Rummy (Public)",
+  `https://xjpl6dawgo66.nobgp.link`: 200, title "Hawaiian Rummy", same bundle (409,971
+  bytes), which contains `F.cancelable&&F.preventDefault(),U()` (the #15 fix).
+
+Correction to the project memory (not to an earlier session): it described the proxy as
+private and auth-gated. The service is titled Public and serves signed out. Memory
+updated.
+
+Not done: #12's stale `data.fresh-1783985149/` is still on the Pi. Not checked: a real
+game on the deployed build, and whether new games now land in `completed-games.json` (the
+#14 fix). That needs someone to finish a game.
+
+> **The lesson:** "nobody has played in 24 hours" rested on a command that returned
+> nothing for the last 24 hours. A zero has to be checked against something that
+> should not be zero; here, `--tail` was that check.
