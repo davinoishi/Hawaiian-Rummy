@@ -945,3 +945,57 @@ appear afterwards, not counted. `tsc` is clean. Not deployed.
 > **The lesson:** when a test shows nothing at all, check the test before the code. Here
 > the client left during a phase the test didn't know existed. That exposed a separate
 > bug, not a flaw in the fix.
+
+---
+
+## Session 9 — 2026-10-19 — The ghost seat from turn order
+
+Fix on `claude/fix-turn-order-ghost-seat` (PR #22), cut from `main`. Entry on PR #19's
+branch, like sessions 6–8.
+
+Traced in the code this time. `determineTurnOrder()` (game-handler.ts) does
+`remainingPlayers = [...state.players]` when it starts and writes the drawn order back
+with `setPlayerOrder()`, which replaces `players` wholesale. `removePlayer()` had already
+dropped the leaver from `players`, `playerNames` and `playerStates`. `startGame()` then
+rebuilds `playerStates` for every id in `players`, so the ghost gets a fresh state but
+no name.
+
+Same mechanism, other direction: `joinGame` only refused once `gameStarted` was set, so
+a join during turn order succeeded and was then overwritten out of `players`.
+
+WRONG THEORY (my own, stated to Davin mid-session): "every ghost turn waits out the
+2-minute idle timeout." I waited over 2 minutes on `main` and saw no `Auto-played idle
+turn`. `isIdleTimerApplicable()` returns false when fewer than 2 connected humans are
+seated ("A solo player against AI can take as long as they like"), and the ghost is
+the only human. So in a solo game the game **stalls on the ghost's first turn
+forever**: last log line `currentPlayer: A04gzt6cgYbkl8NPAAAD phase: draw`, then
+nothing from that room. The 2-minute wait would only apply with other humans present
+(from the code, not measured).
+
+Fix: before `setPlayerOrder`, keep only ids still in `players` (logs `Dropping N
+player(s) who left during turn order`). `joinGame` refuses during `turnOrder`. I chose to
+drop the leaver rather than give them a grace period: nothing has been dealt, and the
+lobby path already treats a pre-start disconnect as leaving.
+
+Real server (scratch copy, port 3103, socket.io clients; A leaves at 3 s, C joins at 5 s):
+
+```
+main  leave: A's socket in "Broadcasting to players" after start; parked on A's turn >2 min
+main  join:  {"success":true}; order [Pineapple, LeaverBefore, Papaya, Mango]; C never seated
+fix   leave: "Dropping 1 player(s) who left during turn order"; order = 3 AIs; A never reappears
+fix   join:  {"error":"Game already started"}
+```
+
+`tsc` is clean. Not deployed. Not changed: the tutorial path (reads state fresh after
+500 ms; a leave inside that window would make the AI `players[0]`).
+
+### Correction to session 8
+
+Session 8 says turn order takes "about 8 s (1 s + 1.5 s steps)". Adding up every sleep in
+`determineTurnOrder` gives about 14 s: 1 s spawn wait, 1.5 s, 3 × 1.5 s, 1 s, 3 s final
+display, 3 × 1 s countdown. Session 8's second test, leaving at 15 s, only cleared it by
+about a second.
+
+> **The lesson:** "it falls back to the idle timer" was a guess about a fallback I hadn't
+> read. The fallback had its own condition, and that condition turned a slow game into a
+> stuck one.
