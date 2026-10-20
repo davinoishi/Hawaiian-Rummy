@@ -214,6 +214,12 @@ export function useCardSelection() {
         onDropOnCard?.(dragState.cardId, targetId);
       }
     } else {
+      // The tap is handled here, so stop the browser from following it with
+      // emulated mouse events and a click. The card's onClick toggles too, and
+      // iOS Safari sends that click on some taps but not others, so a second
+      // card would select on touchend and deselect on the click a moment later
+      // (#15). touchend is not a passive listener in React, so this takes effect.
+      if (e.cancelable) e.preventDefault();
       onTap();
     }
   }, [zoomedCard, touchDragPosition, setZoomedCard, setTouchDraggedCard, setTouchDragPosition, setDragOverCard]);

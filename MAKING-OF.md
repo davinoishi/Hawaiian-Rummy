@@ -729,3 +729,273 @@ with `curl`, authenticated with `gh auth token` passed in a header and never pri
 WRONG THEORY: the first `gh api` call in the review worked, so I took the TLS failure for
 a GraphQL-only problem. Every later `gh` call, REST included, failed, so it's `gh` itself
 in this sandbox, not the endpoint. Not diagnosed further.
+
+---
+
+## Session 6 — 2026-10-18/19 — #14 (games not recorded) and #15 (iPhone can't meld)
+
+Two fixes, on separate branches: `claude/fix-game-recording` (PR #18) and
+`claude/fix-ios-card-selection` (this entry's branch). This entry lives on the second so the
+two PRs don't conflict on this file.
+
+### #14: completed games not recorded
+
+The cause was as the issue said: `recordGameCompletion()` stripped `'🤖 '` before looking
+up the AI profile, but since v2.4.0 the names are `'🥭 Mango'` etc. `getAIProfileId()` now
+ignores any leading non-letter prefix.
+
+**A bug the issue didn't mention, found by testing on `main` first.** A script
+(scratchpad, not committed) drove games to `gameOver` through the real
+`broadcastGameState()` and `ProfileManager`, in a scratch copy of the repo so `data/`
+started empty, once against `git archive origin/main` and once against the fix:
+
+```
+main:  A games: 5   (signed-in human + 3 AI, gameOver broadcast 5 times -> 5 records)
+       B: "No players with profiles to record"   (guest + 3 AI)
+       D: "No players with profiles to record"   (human converted to AI)
+       profile Tester gamesPlayed: 8   after 3 games
+fix:   A 1 record, 4 players, dur=23 | B 1 record, 3 AI | C rematch: +1 | D human kept as human
+```
+
+The duplicate check compared `gameId.slice(0, -13)` (`game-<room>-`) against a set that
+stored `<room>`, so it never matched. Every `gameOver` broadcast recorded the game
+again. It never showed because since February almost nothing was recorded at all. Fixing
+only the AI lookup would have turned that on: with #16's AI loop broadcasting every
+~1.5 s after a game ends, one game could have been recorded hundreds of times. The check
+now keys on room + `gameStartedAt` (new field on `Room`, set in `startGame`), so a rematch
+in the same room still counts. The same field replaces the hardcoded
+`durationMinutes = 0`.
+
+Also checked before trusting the human path: `convertToAIPlayer()` moves the profile
+mapping to the new AI id (`updatePlayerSocketId`), so a human who disconnects and is
+taken over is now looked up by profile first and recorded as a human.
+
+Not checked: whether the 7 February games in production's `completed-games.json` are
+duplicates. Not deployed.
+
+### #15: on iPhone only one card stays selected
+
+**Getting a real WebKit browser took three attempts.** Playwright isn't installed, and
+`xcrun simctl boot` from the sandbox fails with `CoreSimulatorService connection became
+invalid`. Davin booted the simulator himself. The tool attached to an **iPhone 18 Pro**
+(the model in the report), not the iPhone 17 Pro the boot command named. The game ran
+from a scratch copy on port 3101, served through a temporary `.claude/launch.json` entry
+(removed afterwards).
+
+WRONG THEORY 1: "a tap toggles twice: `onTouchEnd` selects, then the synthetic `click`
+runs `onClick` and deselects." Reading the code supports this, but it predicts that no
+card ever stays selected, and Davin saw exactly one. I didn't ship a fix on it.
+
+WRONG THEORY 2, briefly: "the tool's taps land one touch late." The first screenshots
+showed a draw and a selection appearing only after the *next* tap. In fact the screenshot
+just lags the simulator by a second or two. Waiting ~2 s before each screenshot made it
+consistent.
+
+**The probe settled it.** A script added to the scratch copy's built `index.html`
+logged every touch/pointer/mouse/click event, with the "N selected" count, in a fixed
+overlay. A plain button tap: `touchend` then, within 10 ms, `mouseover mousedown mouseup
+click`. On cards, before the fix:
+
+```
+100.23 touchend   A♣  sel=1
+100.23 mouseover  A♣  sel=1          <- iOS stops here: no click on this tap
+112.01 touchend   8♥  sel=2
+112.06 mousedown  8♥  sel=1
+112.06 click      8♥  sel=1          <- the click deselects the second card
+```
+
+So theory 1 was right about the mechanism and wrong about what happens. iOS sometimes
+holds the click back. Most likely its rule for taps that change the page (assumed from
+the pattern, not confirmed). That's why the first card stuck and every later one
+flipped back.
+
+Fix: `handleTouchEnd` calls `e.preventDefault()` (if cancelable) in the tap branch, which
+stops the emulated mouse events and click. The other option, dropping the touch path and
+relying on `click`, would have broken the first tap, which got no click at all.
+
+After the fix, same simulator:
+
+```
+96.97  touchend K♠ sel=1   98.57 touchend K♥ sel=2   109.40 touchend 2♦ sel=3   (no click after any)
+[SERVER] createMeld result: success=true            -> "Your Melds: SET K♠ K♥ 2♦"
+```
+
+Tapping a selected card twice gave `sel=1` then `sel=0`. A horizontal `touch_path` drag
+moved 9♠ from slot 1 to slot 3. The Draw button still receives its click. Client
+`tsc --noEmit` is clean. `npm ci` in `client/` was needed first (`client/node_modules` was
+missing). `npm run build` changed only the JS bundle; the CSS hash was unchanged.
+
+Not tested: desktop mouse clicks after the fix (that code path is unchanged), a real
+iPhone, Android.
+
+Why August missed it: every mobile check ran in Chromium emulating a Pixel 5, and the
+touch tests there drove events directly rather than through the browser's tap handling.
+
+### Correction to session 5
+
+Session 5 says every `gh` call after the first failed TLS verification. The final
+`gh pr merge 17` succeeded. It ran right after the `curl` merge attempt was refused by
+the auto-mode permission check. In this session `gh pr create` failed again with
+`x509: OSStatus -26276`, so PR #18 was opened through the REST API with `curl`, as before.
+`gh` in this sandbox is intermittent, not dead.
+
+> **The lesson:** a theory that explains the bug but predicts the wrong symptom is not
+> the cause yet. Here the mechanism was right and the prediction wrong, and only an event
+> log in the real browser showed the missing piece: iOS sometimes sends the click and
+> sometimes doesn't.
+
+---
+
+## Session 7 — 2026-10-19 — #16: AI keeps taking turns after gameOver
+
+Fix on `claude/fix-ai-gameover-loop` (PR #20). This entry is on PR #19's branch so the
+three PRs don't conflict on this file.
+
+The cause was a phase gap in `AIManager.checkIfAINeedsAction()`: it returned true
+whenever `currentPlayerIndex` pointed at the AI, with no phase check. At `gameOver` the
+index stays on the last player. If that's an AI, the 500 ms processor schedules it,
+`processAIAction` sleeps `AI_DECISION_DELAY` (1500 ms, which matches the issue's "about
+every 1.5 seconds"), and `handleAITurn` logs `taking turn (phase: gameOver)`, handles
+neither `draw` nor `meld`, and returns. The fix is an early `return false` at
+`gameOver`. Before deciding that was enough, I checked the other phases:
+`'discard'` is never set anywhere (`grep "gamePhase: 'discard'"` finds nothing), and
+`lobby`/`turnOrder` are filtered out by `!state.gameStarted`.
+
+Reproduced before fixing, with a script on `git archive main` in a scratch copy: 4 AIs,
+game started, `gamePhase` forced to `gameOver` with `currentPlayerIndex: 0`, console
+captured:
+
+```
+main: gameOver, 10 s: "needs action" 7, "taking turn" 6
+fix:  gameOver, 10 s: "needs action" 0, "taking turn" 0
+```
+
+Control: a rematch in the same room must still get AI turns. The first run looked like
+a regression. At 6 s the fix showed `draw/meld turns 3, draw/discard actions 0, phase now
+draw`, against `4, 1, meld` on main. Rerunning both at 15 s: main 10 turns / 4 actions,
+fix 9 / 3. The difference is buy-window timing (a fresh deal can open the 5 s window,
+which AIs wait out), not the change.
+
+**Answered but not fixed: finished rooms are never released.** `deleteRoom` runs only
+when the last player leaves, and AIs never leave. `cleanupStaleRooms()` only deletes
+rooms that never started, and has no callers. `unregisterRoomAIs()` has no callers
+either. So every finished game with AIs stays in memory with its AIs registered until a
+restart. After this fix they're idle, but `processAITurns` still iterates them every
+500 ms. Releasing them has to work with rematches (`resetGameForRematch`) and tournaments
+reusing a room, so it's left for a separate change and noted in PR #20.
+
+Not verified: that this explains the ~2,900 log lines/day on idle days in production (the
+issue's guess). Not deployed.
+
+---
+
+## Session 8 — 2026-10-19 — Releasing rooms no human is left in
+
+Change on `claude/release-finished-rooms` (PR #21), cut from `main` and independent of
+PR #20. This entry is on PR #19's branch, like sessions 6 and 7.
+
+Session 7 found that finished rooms are never released. Before choosing a rule I mapped
+every path that creates, reuses or drops a room:
+- **Rematch** (`requestRematch`) needs every human in the room to vote at `gameOver`, so
+  a room with a human in it must survive.
+- **A human who closes the tab** goes through `markPlayerDisconnected`, a 45 s grace
+  period, then `convertToAIPlayer`. `reconnectToGame` only matches players still in the
+  grace period, so after conversion nobody can get back in.
+- **Tournaments** reuse their room between games (`resetGameForRematch` +
+  `startGame`), and recreate one if `activeRoomId` is missing.
+- **Saved games** restore into a fresh room, so the old one isn't needed.
+
+Rule: every 60 s, release any started room not in `roomToTournament` whose every seat is
+in `aiPlayerIds` (`GameManager.getRoomsWithNoHumans()`, swept in `server/index.ts`). I
+decided against a timeout for rooms that still have a connected human, and against
+wiring the unused `cleanupStaleRooms()` for lobbies. Either could delete a room someone
+is sitting in.
+
+Predicate script, six rooms: released `["CONVERTED"]`; kept
+`["CONNECTED","GAMEOVER","GRACE","LOBBY","REMATCHED"]`.
+
+End to end: the real server ran from a scratch copy on port 3102, with two socket.io
+clients (`client/node_modules/socket.io-client`).
+
+WRONG TEST, first run: client A disconnected 3 s after `startGame`, and after 130 s
+there was no `Released`, and not even `Grace period expired`. My next theory was also
+wrong: that `socketData` is shared between connections, so A's disconnect looked up B's
+room. It's created per connection (`room-handler.ts:99`). The real reason is that
+`determineTurnOrder` takes about 8 s (1 s + 1.5 s steps) before `gameStarted` is set. A
+left during it, so the server took the lobby path (`removePlayerFromRoom`, which logs
+nothing). The log then still showed A's socket id among the room's players once the game
+started (read from the log, not traced in the code). That **ghost seat** is neither AI
+nor disconnected, so the room (E9TD7Q) is never released. That's a pre-existing bug,
+noted in PR #21 and not fixed.
+
+Second run, A leaving at 15 s:
+
+```
+[Room WVFE3D] Player Leaver2 marked as disconnected
+[Room WVFE3D] Grace period expired for Leaver2
+[Room WVFE3D] Converted Leaver2 to AI control (ai-converted-…)
+[Room WVFE3D] Released: no human players left
+```
+
+B (ZHS4SU) stayed connected and kept playing for the whole 145 s. The first run's B room
+(VYS7GU), whose client disconnected at the end of that run, was released too. AI log
+lines don't carry a room id, so "its AIs stopped" was judged from which room's broadcasts
+appear afterwards, not counted. `tsc` is clean. Not deployed.
+
+> **The lesson:** when a test shows nothing at all, check the test before the code. Here
+> the client left during a phase the test didn't know existed. That exposed a separate
+> bug, not a flaw in the fix.
+
+---
+
+## Session 9 — 2026-10-19 — The ghost seat from turn order
+
+Fix on `claude/fix-turn-order-ghost-seat` (PR #22), cut from `main`. Entry on PR #19's
+branch, like sessions 6–8.
+
+Traced in the code this time. `determineTurnOrder()` (game-handler.ts) does
+`remainingPlayers = [...state.players]` when it starts and writes the drawn order back
+with `setPlayerOrder()`, which replaces `players` wholesale. `removePlayer()` had already
+dropped the leaver from `players`, `playerNames` and `playerStates`. `startGame()` then
+rebuilds `playerStates` for every id in `players`, so the ghost gets a fresh state but
+no name.
+
+Same mechanism, other direction: `joinGame` only refused once `gameStarted` was set, so
+a join during turn order succeeded and was then overwritten out of `players`.
+
+WRONG THEORY (my own, stated to Davin mid-session): "every ghost turn waits out the
+2-minute idle timeout." I waited over 2 minutes on `main` and saw no `Auto-played idle
+turn`. `isIdleTimerApplicable()` returns false when fewer than 2 connected humans are
+seated ("A solo player against AI can take as long as they like"), and the ghost is
+the only human. So in a solo game the game **stalls on the ghost's first turn
+forever**: last log line `currentPlayer: A04gzt6cgYbkl8NPAAAD phase: draw`, then
+nothing from that room. The 2-minute wait would only apply with other humans present
+(from the code, not measured).
+
+Fix: before `setPlayerOrder`, keep only ids still in `players` (logs `Dropping N
+player(s) who left during turn order`). `joinGame` refuses during `turnOrder`. I chose to
+drop the leaver rather than give them a grace period: nothing has been dealt, and the
+lobby path already treats a pre-start disconnect as leaving.
+
+Real server (scratch copy, port 3103, socket.io clients; A leaves at 3 s, C joins at 5 s):
+
+```
+main  leave: A's socket in "Broadcasting to players" after start; parked on A's turn >2 min
+main  join:  {"success":true}; order [Pineapple, LeaverBefore, Papaya, Mango]; C never seated
+fix   leave: "Dropping 1 player(s) who left during turn order"; order = 3 AIs; A never reappears
+fix   join:  {"error":"Game already started"}
+```
+
+`tsc` is clean. Not deployed. Not changed: the tutorial path (reads state fresh after
+500 ms; a leave inside that window would make the AI `players[0]`).
+
+### Correction to session 8
+
+Session 8 says turn order takes "about 8 s (1 s + 1.5 s steps)". Adding up every sleep in
+`determineTurnOrder` gives about 14 s: 1 s spawn wait, 1.5 s, 3 × 1.5 s, 1 s, 3 s final
+display, 3 × 1 s countdown. Session 8's second test, leaving at 15 s, only cleared it by
+about a second.
+
+> **The lesson:** "it falls back to the idle timer" was a guess about a fallback I hadn't
+> read. The fallback had its own condition, and that condition turned a slow game into a
+> stuck one.
