@@ -1062,3 +1062,19 @@ game on the deployed build, and whether new games now land in `completed-games.j
 > **The lesson:** "nobody has played in 24 hours" rested on a command that returned
 > nothing for the last 24 hours. A zero has to be checked against something that
 > should not be zero; here, `--tail` was that check.
+
+### #12: the stale `data.fresh-1783985149/` removed (20 Oct)
+
+Compared it with the live `data/` before deleting:
+- **`profiles.json` (Jul 13):** the 4 built-in AI profiles with all-zero stats. Live
+  has the same 4 ids with real stats (e.g. `ai-mango` gamesPlayed 0→5, totalScore
+  0→4345) plus `Davin`. No id missing from live, no live stat lower.
+- **`tournaments.json`:** `[]`.
+- **References:** not in docker-compose.yml or the Dockerfile; the container's only
+  mount is `/root/Hawaiian-Rummy/data -> /app/data`.
+
+That matches the issue's guess: a scratch "start clean" directory from the July
+containerisation. Archived to `/root/hawaiian-rummy-data.fresh-1783985149.tar.gz` (493
+bytes, sha256 of both files checked against the originals), then `rm -r`. Afterwards
+`git status -sb` on the Pi was clean, with no untracked files, and the container
+stayed `Up (healthy)`.
