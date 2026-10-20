@@ -149,6 +149,13 @@ export class AIManager {
    * Check if an AI needs to take action
    */
   private checkIfAINeedsAction(state: GameState, aiId: string): boolean {
+    // A finished game has nothing to act on. Without this, the AI that
+    // currentPlayerIndex is left pointing at "takes a turn" every
+    // AI_DECISION_DELAY for as long as the room exists (#16).
+    if (state.gamePhase === 'gameOver') {
+      return false;
+    }
+
     // Check if it's round summary and AI hasn't continued
     if (state.gamePhase === 'roundSummary') {
       return !state.continueClicked.includes(aiId);
