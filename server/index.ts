@@ -245,6 +245,19 @@ setInterval(() => {
   }
 }, 1000); // Check every second
 
+// Release rooms no human is left in. Otherwise a finished (or abandoned) game
+// stays in memory with its AIs registered until the server restarts, and the AI
+// processor iterates them every 500 ms. Tournament rooms are left to the
+// tournament manager, which reuses a room between games.
+setInterval(() => {
+  for (const roomId of gameManager.getRoomsWithNoHumans()) {
+    if (tournamentManager.isGameInTournament(roomId)) continue;
+    aiManager.unregisterRoomAIs(roomId);
+    gameManager.deleteRoom(roomId);
+    console.log(`[Room ${roomId}] Released: no human players left`);
+  }
+}, 60 * 1000);
+
 // ===== START SERVER =====
 const PORT = process.env.PORT || 3001;
 

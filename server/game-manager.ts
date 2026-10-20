@@ -648,6 +648,24 @@ export class GameManager {
   }
 
   /**
+   * Rooms whose game has started but which no human is left in: every seat is AI,
+   * either from the start or because a disconnected player's grace period ran out.
+   * Reconnecting only works during the grace period, so nobody can return to such
+   * a room. A human still connected, or still within the grace period, keeps the
+   * room (and so a rematch) alive.
+   */
+  getRoomsWithNoHumans(): string[] {
+    const roomIds: string[] = [];
+    for (const [roomId, room] of this.rooms) {
+      const { players, gameStarted } = room.state;
+      if (gameStarted && players.length > 0 && players.every(id => room.aiPlayerIds.includes(id))) {
+        roomIds.push(roomId);
+      }
+    }
+    return roomIds;
+  }
+
+  /**
    * Clean up stale rooms (older than given age in ms)
    */
   cleanupStaleRooms(maxAgeMs: number): number {
