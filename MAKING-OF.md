@@ -843,3 +843,46 @@ the auto-mode permission check. In this session `gh pr create` failed again with
 > the cause yet. Here the mechanism was right and the prediction wrong, and only an event
 > log in the real browser showed the missing piece: iOS sometimes sends the click and
 > sometimes doesn't.
+
+---
+
+## Session 7 — 2026-10-19 — #16: AI keeps taking turns after gameOver
+
+Fix on `claude/fix-ai-gameover-loop` (PR #20). This entry is on PR #19's branch so the
+three PRs don't conflict on this file.
+
+The cause was a phase gap in `AIManager.checkIfAINeedsAction()`: it returned true
+whenever `currentPlayerIndex` pointed at the AI, with no phase check. At `gameOver` the
+index stays on the last player. If that's an AI, the 500 ms processor schedules it,
+`processAIAction` sleeps `AI_DECISION_DELAY` (1500 ms, which matches the issue's "about
+every 1.5 seconds"), and `handleAITurn` logs `taking turn (phase: gameOver)`, handles
+neither `draw` nor `meld`, and returns. The fix is an early `return false` at
+`gameOver`. Before deciding that was enough, I checked the other phases:
+`'discard'` is never set anywhere (`grep "gamePhase: 'discard'"` finds nothing), and
+`lobby`/`turnOrder` are filtered out by `!state.gameStarted`.
+
+Reproduced before fixing, with a script on `git archive main` in a scratch copy: 4 AIs,
+game started, `gamePhase` forced to `gameOver` with `currentPlayerIndex: 0`, console
+captured:
+
+```
+main: gameOver, 10 s: "needs action" 7, "taking turn" 6
+fix:  gameOver, 10 s: "needs action" 0, "taking turn" 0
+```
+
+Control: a rematch in the same room must still get AI turns. The first run looked like
+a regression. At 6 s the fix showed `draw/meld turns 3, draw/discard actions 0, phase now
+draw`, against `4, 1, meld` on main. Rerunning both at 15 s: main 10 turns / 4 actions,
+fix 9 / 3. The difference is buy-window timing (a fresh deal can open the 5 s window,
+which AIs wait out), not the change.
+
+**Answered but not fixed: finished rooms are never released.** `deleteRoom` runs only
+when the last player leaves, and AIs never leave. `cleanupStaleRooms()` only deletes
+rooms that never started, and has no callers. `unregisterRoomAIs()` has no callers
+either. So every finished game with AIs stays in memory with its AIs registered until a
+restart. After this fix they're idle, but `processAITurns` still iterates them every
+500 ms. Releasing them has to work with rematches (`resetGameForRematch`) and tournaments
+reusing a room, so it's left for a separate change and noted in PR #20.
+
+Not verified: that this explains the ~2,900 log lines/day on idle days in production (the
+issue's guess). Not deployed.
