@@ -886,3 +886,62 @@ reusing a room, so it's left for a separate change and noted in PR #20.
 
 Not verified: that this explains the ~2,900 log lines/day on idle days in production (the
 issue's guess). Not deployed.
+
+---
+
+## Session 8 — 2026-10-19 — Releasing rooms no human is left in
+
+Change on `claude/release-finished-rooms` (PR #21), cut from `main` and independent of
+PR #20. This entry is on PR #19's branch, like sessions 6 and 7.
+
+Session 7 found that finished rooms are never released. Before choosing a rule I mapped
+every path that creates, reuses or drops a room:
+- **Rematch** (`requestRematch`) needs every human in the room to vote at `gameOver`, so
+  a room with a human in it must survive.
+- **A human who closes the tab** goes through `markPlayerDisconnected`, a 45 s grace
+  period, then `convertToAIPlayer`. `reconnectToGame` only matches players still in the
+  grace period, so after conversion nobody can get back in.
+- **Tournaments** reuse their room between games (`resetGameForRematch` +
+  `startGame`), and recreate one if `activeRoomId` is missing.
+- **Saved games** restore into a fresh room, so the old one isn't needed.
+
+Rule: every 60 s, release any started room not in `roomToTournament` whose every seat is
+in `aiPlayerIds` (`GameManager.getRoomsWithNoHumans()`, swept in `server/index.ts`). I
+decided against a timeout for rooms that still have a connected human, and against
+wiring the unused `cleanupStaleRooms()` for lobbies. Either could delete a room someone
+is sitting in.
+
+Predicate script, six rooms: released `["CONVERTED"]`; kept
+`["CONNECTED","GAMEOVER","GRACE","LOBBY","REMATCHED"]`.
+
+End to end: the real server ran from a scratch copy on port 3102, with two socket.io
+clients (`client/node_modules/socket.io-client`).
+
+WRONG TEST, first run: client A disconnected 3 s after `startGame`, and after 130 s
+there was no `Released`, and not even `Grace period expired`. My next theory was also
+wrong: that `socketData` is shared between connections, so A's disconnect looked up B's
+room. It's created per connection (`room-handler.ts:99`). The real reason is that
+`determineTurnOrder` takes about 8 s (1 s + 1.5 s steps) before `gameStarted` is set. A
+left during it, so the server took the lobby path (`removePlayerFromRoom`, which logs
+nothing). The log then still showed A's socket id among the room's players once the game
+started (read from the log, not traced in the code). That **ghost seat** is neither AI
+nor disconnected, so the room (E9TD7Q) is never released. That's a pre-existing bug,
+noted in PR #21 and not fixed.
+
+Second run, A leaving at 15 s:
+
+```
+[Room WVFE3D] Player Leaver2 marked as disconnected
+[Room WVFE3D] Grace period expired for Leaver2
+[Room WVFE3D] Converted Leaver2 to AI control (ai-converted-…)
+[Room WVFE3D] Released: no human players left
+```
+
+B (ZHS4SU) stayed connected and kept playing for the whole 145 s. The first run's B room
+(VYS7GU), whose client disconnected at the end of that run, was released too. AI log
+lines don't carry a room id, so "its AIs stopped" was judged from which room's broadcasts
+appear afterwards, not counted. `tsc` is clean. Not deployed.
+
+> **The lesson:** when a test shows nothing at all, check the test before the code. Here
+> the client left during a phase the test didn't know existed. That exposed a separate
+> bug, not a flaw in the fix.
