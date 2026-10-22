@@ -1100,3 +1100,56 @@ not signed in, and `recordGameCompletion()` only keeps players with a profile.
 games aren't. This answers the question left open in #14 ("Decide whether games by players
 who aren't signed in should be recorded"). Davin will sign in to his own profile to have
 his games count.
+
+## Session 12 — 2026-10-21 — Node 22.23.4 for the October security release
+
+Node's 21 Oct 2026 security release fixed ten CVEs. The patched versions are 22.23.4,
+24.22.1 and 26.12.1. The one that matters here is **CVE-2026-111497**, an out-of-bounds
+write in the Brotli decoder that the advisory says "permits remote code execution".
+
+**Why Rummy was exposed (checked, not guessed):** production ran **v22.23.3** (`docker
+exec hawaiian-rummy node -v`). `server/index.ts:75` is `app.use(express.json())` on
+body-parser **2.2.0**, and body-parser's `lib/read.js:184` maps `Content-Encoding: br` to
+`zlib.createBrotliDecompress()`. So anyone hitting the public link can send a request body
+through Node's Brotli decoder without signing in. To confirm the path on a throwaway
+container (not production), I POSTed the literal bytes `not-brotli` labelled
+`Content-Encoding: br`. It returned 400 and logged `Error: Decompression failed … at
+BrotliDecoder.zlibOnError`, and the server stayed up. No exploit payload was sent.
+
+**Change (PR #26, merged as 7ef8efb):** both Dockerfile stages are pinned to
+`node:22.23.4-bookworm-slim` instead of the floating `node:22-bookworm-slim`. A security
+release now needs a deliberate rebuild, and `node -v` says which one is live.
+
+**The build that hung, and the WRONG THEORY.** The first test build (straight from the
+branch, `docker build … https://github.com/…#claude/node-22.23.4-security`) sat in
+`npm ci` for 7+ minutes. The 20 Oct deploy took about 2 minutes in total. Load was 0.5,
+both npm processes were idle (`State: S`, CPU ticks flat over 10 s), and each had 14
+sockets open. npm's own debug log, read through `/proc/<pid>/root/root/.npm/_logs/`, had
+installed everything and stopped at `silly audit bulk request failed undefined`.
+
+- WRONG THEORY: the new release's keep-alive fix (CVE-2026-105481) had broken npm's
+  HTTP agent. Disproved: `npm install express@5.1.0` hung for 90 s on **22.23.3 too**.
+- Network inside the container: DNS 12 ms, metadata fetches 35–600 ms. Fine.
+- `--no-audit` against `--audit`, same install: **2 s** against **killed at 45 s**. A
+  direct POST to `/-/npm/v1/security/advisories/bulk` hung from the Pi (20 s) and from
+  the Mac (25 s, `000`), while `GET /express` took 0.03 s. **npm's audit endpoint was
+  hanging.** The Mac and the Pi may share a connection, so this doesn't prove a global
+  outage.
+- The first builds did finish on their own (`EXIT 0`) once npm gave up on the audit.
+
+So `npm ci` now runs with `--no-audit --no-fund` in both stages (ce9b5cd). An audit buried
+in a build log was never read anyway.
+
+**Deploy (21 Oct, 20:01 Pacific / 03:01 UTC 22 Oct).** No socket connections since
+20:09 UTC on the 21st (one, lasting 2 s). The only traffic was the 30-second internal probe
+and SemrushBot. Data backed up to `/root/hawaiian-rummy-data-20261022T030149Z.tar.gz`
+(2,722 B; the previous two were 2,580 and 2,583 B), then `git pull --ff-only` to 7ef8efb
+and `docker compose up -d --build` (EXIT 0).
+
+**Verified after deploy:** `Up 28 seconds (healthy)`; `node -v` **v22.23.4**; startup
+log `Loaded 5 profiles`, `Loaded 8 completed games`, `Loaded 1 active tournaments`; live
+bundle `assets/index-DYfyiy9S.js` matches `public/index.html`; a signed-out fetch of the
+public link from the Mac returned **200** in 0.19 s.
+
+Not done: the floating `node:22-bookworm-slim` tag was never checked for whether it already
+pointed at 22.23.4. Pinning made that question moot.
